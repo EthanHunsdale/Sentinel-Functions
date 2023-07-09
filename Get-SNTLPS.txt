@@ -171,13 +171,5 @@ If (-not(Test-Path $FunctionsFolder)) {
 }
 
 Enable-SSL
-
-If ($UpdateFunctions) {
-	Import-SNTLPS
-	Update-SNTLPS
-}
-else {
-	Import-SNTLPS
-}
-
+Import-SNTLPS
 Get-ImportStatus
