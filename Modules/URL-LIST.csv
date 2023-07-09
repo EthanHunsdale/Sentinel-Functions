@@ -1,12 +1,3 @@
 Verb,URL
-SNTL-PS-Connect,
-SNTL-PS-Disable,
-SNTL-PS-Enable,
-SNTL-PS-Export,
-SNTL-PS-Get,
-SNTL-PS-Invoke,
-SNTL-PS-Join,
-SNTL-PS-Remove,
-SNTL-PS-Set,
-SNTL-PS-Start,
-SNTL-PS-Update,
+SNTL-PS-Export,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Export.txt
+SNTL-PS-Get,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Get.txt

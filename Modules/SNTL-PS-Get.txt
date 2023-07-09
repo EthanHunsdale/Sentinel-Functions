@@ -1,0 +1,37 @@
+Function Get-SNTLPS {
+    param
+    (
+        [Parameter(Mandatory = $false)]
+        [switch] $Force
+    )
+
+    $InstallScript = 'https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Get-SNTLPS.txt'
+
+    If ($Force) {
+        Write-Host "-Force specified. Force loading latest functions."
+        Start-Job -ScriptBlock { Invoke-WebRequest $InstallScript -UseBasicParsing -Headers @{"Cache-Control" = "no-cache" } | Invoke-Expression } | Receive-Job -AutoRemoveJob -Wait
+    }
+
+    If (Get-Module -Name "SNTL-PS*" -ErrorAction SilentlyContinue) {
+        # List imported functions 
+        Write-Host ====================================================
+        Write-Host "The below functions are now loaded and ready to use:"
+        Write-Host ====================================================
+        Get-Command -Module "SNTL-PS*" | Format-Wide -Column 3
+        Write-Host ====================================================
+        Write-Host "Type: 'Help <function name> -Detailed' for more info"
+        Write-Host ====================================================
+    }
+    Else {
+        $progressPreference = 'silentlyContinue'
+        Invoke-WebRequest $InstallScript -UseBasicParsing | Invoke-Expression
+        # List imported functions
+        Write-Host ====================================================
+        Write-Host "The below functions are now loaded and ready to use:"
+        Write-Host ====================================================
+        Get-Command -Module "SNTL-PS*" | Format-Wide -Column 3
+        Write-Host ====================================================
+        Write-Host "Type: 'Help <function name> -Detailed' for more info"
+        Write-Host ====================================================
+    }
+}

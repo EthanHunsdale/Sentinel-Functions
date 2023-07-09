@@ -137,27 +137,6 @@ Function Update-SNTLPS {
 	}
 }
 
-If (Get-Module -Name "SNTL-PS*") {
-	Write-Host "Functions quickloaded. Loading updated scripts in background."
-	
-	Start-Job -ScriptBlock { 
-		Invoke-WebRequest -UseBasicParsing -Headers @{"Cache-Control" = "no-cache" } | Invoke-Expression 
-	} | Out-Null
-}
-Else {
-	Write-Host "Quickload not found. Loading Functions."
-	
-	Start-Job -ScriptBlock { 
-		Invoke-WebRequest -UseBasicParsing -Headers @{"Cache-Control" = "no-cache" } | Invoke-Expression 
-	} | Receive-Job -AutoRemoveJob -Wait
-	
-	$DestinationFiles | ForEach-Object {
-		If (Test-Path $_ -ErrorAction SilentlyContinue) {
-			Import-Module $_ -Global -Force
-		}
-	}
-}
-
 Function Get-ImportStatus {
 	If (Get-Module -Name "SNTL-PS*" -ErrorAction SilentlyContinue) {
 		Write-Host -NoNewLine " "; Write-Host @greenCheck; Write-Host -NoNewLine " Functions successfully loaded "; Write-Host @greenCheck; Write-Host "`n - 'Get-SNTLPS' will give a list of custom functions -`n"
@@ -166,8 +145,6 @@ Function Get-ImportStatus {
 		Write-Host "Functions were not successfully loaded."
 	}
 }
-
-<# CODE STARTS HERE #>
 
 Write-Host "`n - Retrieving Sentinel Functions -"
 Set-ExecutionPolicy Bypass -Scope Process -Force
