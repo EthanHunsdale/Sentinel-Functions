@@ -152,7 +152,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 $progressPreference = 'silentlyContinue'
 
 # Custom Variables
-CSVUrl = 'https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/URL-LIST.csv'
+$CSVUrl = 'https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/URL-LIST.csv'
 
 # Variables
 $Global:SNTLModules = @()										# List for storing modules
