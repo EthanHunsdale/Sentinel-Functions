@@ -169,5 +169,7 @@ If (-not(Test-Path $FunctionsFolder)) {
 }
 
 Enable-SSL
-Import-SNTLModules
-Get-ImportStatus
+# Import-SNTLModules
+# Get-ImportStatus
+
+Write-Host Get-ModuleInfo
