@@ -152,12 +152,11 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 $progressPreference = 'silentlyContinue'
 
 # Custom Variables
-CSVUrl = ""
+CSVUrl = 'https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/URL-LIST.csv'
 
 # Variables
 $Global:SNTLModules = @()										# List for storing modules
 $Global:UpdateFunctions = $true										# Toggle to update functions or not.
-$Global:FunctionURLs = '' 											# Empty string for storing function URLs
 $Global:FunctionsFolder = $ENV:SystemDrive + '\Sentinel\Functions\'	# Location of functions directory.
 $Global:greenCheck = @{												# Cosmetic green tick
 	Object          = [Char]8730
