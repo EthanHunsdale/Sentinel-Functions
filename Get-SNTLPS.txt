@@ -108,8 +108,6 @@ Function Import-SNTLModules {
 	}
 }
 
-
-#Import existing functions first
 Function Update-SNTLPS {
 
 	param(
@@ -171,5 +169,5 @@ If (-not(Test-Path $FunctionsFolder)) {
 }
 
 Enable-SSL
-Import-SNTLPS
+Import-SNTLModules
 Get-ImportStatus
