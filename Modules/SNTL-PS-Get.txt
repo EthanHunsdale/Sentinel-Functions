@@ -1,37 +1,147 @@
 Function Get-SNTLPS {
-    param
-    (
-        [Parameter(Mandatory = $false)]
+    <#
+    .SYNOPSIS
+        Installs Sentinel-Functions from GitHub.
+    .PARAMETER Force
+        Set to true to overwrite existing functions.
+    .EXAMPLE
+        Get-SNTLPS -Force $True
+    #>
+
+    Param (
+        [Parameter(Mandatory = $False)]
         [switch] $Force
     )
 
+    # Set the Functions URL.
     $InstallScript = 'https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Get-SNTLPS.txt'
 
+    # Install functions
+    $progressPreference = 'silentlyContinue'
     If ($Force) {
-        Write-Host "-Force specified. Force loading latest functions."
-        Start-Job -ScriptBlock { Invoke-WebRequest $InstallScript -UseBasicParsing -Headers @{"Cache-Control" = "no-cache" } | Invoke-Expression } | Receive-Job -AutoRemoveJob -Wait
-    }
+        Write-Host "Force loading latest functions." -ForegroundColor Cyan
 
-    If (Get-Module -Name "SNTL-PS*" -ErrorAction SilentlyContinue) {
-        # List imported functions 
-        Write-Host ====================================================
-        Write-Host "The below functions are now loaded and ready to use:"
-        Write-Host ====================================================
-        Get-Command -Module "SNTL-PS*" | Format-Wide -Column 3
-        Write-Host ====================================================
-        Write-Host "Type: 'Help <function name> -Detailed' for more info"
-        Write-Host ====================================================
+        Start-Job -ScriptBlock { 
+            Invoke-WebRequest $InstallScript -UseBasicParsing -Headers @{"Cache-Control" = "no-cache" } | Invoke-Expression 
+        } | Receive-Job -AutoRemoveJob -Wait
+    }
+    ElseIf (-Not (Get-Module -Name "SNTL-PS*")) {
+        Write-Host "Installing functions." -ForegroundColor Cyan
+        Invoke-WebRequest $InstallScript -UseBasicParsing | Invoke-Expression
     }
     Else {
-        $progressPreference = 'silentlyContinue'
-        Invoke-WebRequest $InstallScript -UseBasicParsing | Invoke-Expression
-        # List imported functions
+        Write-Host "Functions already loaded." -ForegroundColor Green
+    }
+
+    # List imported functions
+    Try {
         Write-Host ====================================================
-        Write-Host "The below functions are now loaded and ready to use:"
+        Write-Host "The below functions are now loaded and ready to use:" -ForegroundColor Cyan
         Write-Host ====================================================
         Get-Command -Module "SNTL-PS*" | Format-Wide -Column 3
         Write-Host ====================================================
-        Write-Host "Type: 'Help <function name> -Detailed' for more info"
+        Write-Host "Type: 'Help <function name> -Detailed' for more info" -ForegroundColor Cyan
         Write-Host ====================================================
+    }
+    Catch {
+        Write-Host "Error loading functions. Please try again." -ForegroundColor Red
+    }
+}
+
+Function Get-USBPath {
+    <#
+    .SYNOPSIS
+        Gets the path for the data folder on your install USB drive.
+    .PARAMETER DriveName
+        Required. The name of the usb drive
+    .PARAMETER FolderName
+        Optional. The name of the data folder on drive.
+    .EXAMPLE
+        Get-USBDataFolder -DriveName "Data" -FolderName "MyFolder"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $DriveName,
+
+        [Parameter(Mandatory = $False)]
+        [String] $FolderName
+    )
+
+    $DriveLetter = (Get-WmiObject Win32_Volume | Where-Object Label -like $DriveName).DriveLetter
+    $FolderPath = "{0}\{1}" -F $DriveLetter, $FolderName
+
+    If (Test-Path $FolderPath) {
+        Return $FolderPath
+    }
+    Else {
+        Return $null
+    }
+}
+
+Function Get-RoboCopyProgress {
+    <#
+    .SYNOPSIS
+        Displays the current progress of your RoboCopy process.
+        You must pipe the RoboCopy process into this command.
+        Script found here: 'https://www.reddit.com/r/PowerShell/comments/p4l4fm/better_way_of_robocopy_writeprogress/h97skef/'
+    .EXAMPLE
+        Robocopy "C:\Temp1" "C:\Temp2" /E /NJH /IS /NJS /NDL /NC /BYTES | Get-RobocopyProgress
+    #>
+
+    Param (
+        [Parameter(Mandatory, ValueFromPipeline)]
+        $inputObject
+    )
+
+    Begin {
+        [String] $File = " "
+        [Double] $Percent = 0
+        [Double] $Size = $Null
+        [Double] $Count = (Get-ChildItem $SourcePath -File -Recurse -Force).Count
+        [Double] $FilesLeft = $Count
+        [Double] $Number = 0
+    }
+
+    Process {
+
+        $Host.PrivateData.ProgressBackgroundColor = 'Cyan' 
+        $Host.PrivateData.ProgressForegroundColor = 'Green'
+    
+        $Data = $InputObject -split '\x09'
+    
+        If (![String]::IsNullOrEmpty("$($Data[4])")) {
+            $File = $Data[4] -replace '.+\\(?=(?:.(?!\\))+$)'
+            $FilesLeft--
+            $Number++
+        }
+        If (![String]::IsNullOrEmpty("$($Data[0])")) {
+            $Percent = ($Data[0] -replace '%') -replace '\s'
+        }
+        If (![String]::IsNullOrEmpty("$($Data[3])")) {
+            $Size = $Data[3]
+        }
+        [String] $SizeString = switch ($Size) {
+            { $_ -gt 1TB -and $_ -lt 1024TB } {
+                "$("{0:n2}" -f ($Size / 1TB) + " TB")"
+            }
+            { $_ -gt 1GB -and $_ -lt 1024GB } {
+                "$("{0:n2}" -f ($Size / 1GB) + " GB")"
+            }
+            { $_ -gt 1MB -and $_ -lt 1024MB } {
+                "$("{0:n2}" -f ($Size / 1MB) + " MB")"
+            }
+            { $_ -ge 1KB -and $_ -lt 1024KB } {
+                "$("{0:n2}" -f ($Size / 1KB) + " KB")"
+            }
+            { $_ -lt 1KB } {
+                "$Size B"
+            }
+        }
+    
+        Write-Progress -Activity "   Currently Copying: ..\$File"`
+            -CurrentOperation  "Copying: $(($Number).ToString()) of $(($Count).ToString()) `nCopied: $(if($Number -le 0){($Number).ToString()}else{($Number - 1).ToString()}) / $(($Count).ToString()) `nFiles Left: $(($FilesLeft + 1).ToString())"`
+            -Status "Size: $SizeString       Complete: $Percent%"`
+            -PercentComplete $Percent
     }
 }
