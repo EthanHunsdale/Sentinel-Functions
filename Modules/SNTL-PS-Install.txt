@@ -1,0 +1,104 @@
+Function Install-AppDefaults {
+    <#
+    .SYNOPSIS
+        Set default apps through DISM
+    .EXAMPLE
+        Install-AppDefaults
+    #>
+
+    Write-Host "Installing App Defaults"
+
+    If (Test-Path 'C:\IT\AppAssociations.xml') {
+        Write-Host "> Importing App Defaults" -ForegroundColor Cyan
+        Dism.exe /online /import-defaultappassociations:'C:\IT\AppAssociations.xml'
+    }
+    Else {
+        Write-Host "> Could not find app associations xml file."
+    }
+}
+
+Function Install-Office365 {
+    <#
+    .SYNOPSIS
+        Installs Office 365 and adds shortcuts to public desktop
+    .PARAMETER SiteCode
+        Used to identify the prefix of a customised XML file.
+        Example: $SiteCode_O365_Config.xml
+    .PARAMETER DataFolder
+        The root folder that has the O365 folder with setup.exe and config files.
+    .EXAMPLE
+        Install-Office365 -SiteCode "ABC" -DataFolder "C:\Data"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $False)]
+        [String] $SiteCode = "Generic",
+
+        [Parameter(Mandatory = $True)]
+        [String] $DataFolder
+    )
+
+    Begin {
+        Write-Host "Starting Office 365 Installation"
+
+        # Installation Variables 
+        $O365Setup = "{0}\O365\setup.exe" -F $DataFolder
+        $O365Xml = "{0}\O365\{1}_O365_Config.xml" -F $DataFolder, $SiteCode
+        $Installed = $False
+
+        # Shortcut Variables 
+        $O365Root64 = "C:\Program Files\Microsoft Office\root\Office16\"
+        $O365Root32 = "C:\Program Files (x86)\Microsoft Office\root\Office16\"
+        $O365Apps = @{ Word = "WINWORD"; Outlook = "OUTLOOK"; Excel = "EXCEL" }
+    }
+
+    Process {
+        Write-Host "Installing Office 365"
+
+        Try {
+            # Install Office 365
+            Start-Process $O365Setup -ArgumentList "/configure $O365Xml" | Wait-Process
+            
+            $Installed = $True
+            Write-Host "> Office 365 Installed" -ForegroundColor Green
+        }
+        Catch {
+            Write-Host "> Error installing Office 365" -ForegroundColor Red
+        }
+
+        If ($Installed) {
+            Write-Host "Placing Shortcuts"
+
+            ForEach ($App in $O365Apps.Keys) {
+                # Set Path variables for O365 root
+                $Path64 = "{0}{1}.exe" -F $O365Root64, $($O365[$App])
+                $Path32 = "{0}{1}.exe" -F $O365Root32, $($O365[$App])
+
+                Try {
+                    # Confirm Office 365 version
+                    If (Test-Path $Path64) {
+                        $TargetFile = $Path64
+                    }
+                    ElseIf (Test-Path $Path32) {
+                        $TargetFile = $Path32
+                    }
+
+                    # Create the shortcut on public desktop
+                    $ShortcutFile = "$env:Public\Desktop\{0}.lnk" -F $App
+                    $WScriptShell = New-Object -ComObject WScript.Shell
+                    $Shortcut = $WScriptShell.CreateShortcut($ShortcutFile)
+                    $Shortcut.TargetPath = $TargetFile
+                    $Shortcut.Save()
+
+                    Write-Host "> Added $App shortcut" -ForegroundColor Green
+                }
+                Catch {
+                    Write-Host "> Could not place shortcuts" -ForegroundColor Red
+                }
+            }
+        }
+        Else {
+            Write-Host "> Could not place shortcuts" -ForegroundColor Red
+        }
+    }
+}
