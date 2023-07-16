@@ -1,0 +1,21 @@
+Function Get-SNTLPS {
+	$progressPreference = 'silentlyContinue'
+	[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+	$Destination = $Env:temp + "\SNTLPS.psm1"
+	Set-ExecutionPolicy Bypass -Scope Process -Force
+	(Invoke-WebRequest short.sentinelone.me/wfEz5 -UseBasicParsing).Content | Out-File -FilePath $Destination
+	Import-Module $Destination -Global -Force
+	If (Get-Module -Name SNTLPS -ErrorAction SilentlyContinue) {
+		# List imported functions from SNTLPS
+		Write-Host `n====================================================
+		Write-Host "The below functions are now loaded and ready to use:"
+		Write-Host ====================================================
+
+		Get-Command -Module SNTLPS | Format-Wide -Column 3
+
+		Write-Host ====================================================
+		Write-Host "Type: 'Help <function name> -Detailed' for more info"
+		Write-Host ====================================================
+	}
+}
+Get-SNTLPS
