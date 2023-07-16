@@ -1,0 +1,42 @@
+Function Copy-FolderData {
+    <#
+    .SYNOPSIS
+        Copy source folders and subfolders using robocopy.
+    .PARAMETER SourcePath
+        The path of the folder to be copied.
+    .PARAMETER DestinationPath
+        The path of the destination to copy to.
+    .EXAMPLE
+        Copy-FolderData -SourcePath "C:\SourceData" -DestinationPath "C:\DestinationFolder"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $SourcePath,
+
+        [Parameter(Mandatory = $True)]
+        [String] $DestinationPath
+    )
+
+    # Test if destination exists.
+    If (Test-Path $DestinationPath) {
+        New-Item -Path $DestinationPath -ItemType "directory"
+    }
+
+    # Start robocopy process and pipe to robocopy progress.
+    Try {
+        Write-Host "Starting Robocopy."
+        robocopy $SourcePath $DestinationPath /E /NJH /IS /NDL /NC /BYTES | Get-RoboCopyProgress
+    }
+    Catch {
+        Write-Host "A problem occurred when copying items." -ForegroundColor Red
+    }
+
+    # Copy verification
+    If ($LASTEXITCODE -le 1) {
+        Write-Host "Files copied successfully." -ForegroundColor Green
+    }
+    Else {
+        Write-Host "Some or all files failed to copy." -ForegroundColor Red
+    }
+}
