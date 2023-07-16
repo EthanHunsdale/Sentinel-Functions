@@ -1,0 +1,26 @@
+Function Start-Win10Decrapify {
+    <#
+    .SYNOPSIS
+        Runs Windows 10 Decrapifier by CSAND.
+        Version in Sentinel-Functions GitHub is modified to set a few switches to true.
+        Source: https://community.spiceworks.com/scripts/show/4378-windows-10-decrapifier-18xx-19xx-2xxx
+    .PARAMETER ScriptURL
+        URL to raw script file.
+    .EXAMPLE
+        Start-Win10Decrapify -ScriptURL "https://example.com/script"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $ScriptURL
+    )
+
+    Begin {
+        Write-Host "Starting Windows 10 Decrapifier"
+
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        Enable-SSL
+    }
+
+    Process { Invoke-WebRequest $ScriptURL -UseBasicParsing | Invoke-Expression }
+}
