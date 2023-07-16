@@ -1,0 +1,78 @@
+Function Add-WifiNetwork {
+    <#
+    .SYNOPSIS
+        Adds a wireless profile with the supplied parameters via netsh.
+        Does not connect to the wifi network.
+    .PARAMETER NetworkSSID
+        The name of the wireless network.
+    .PARAMETER NetworkPassword
+        The password of the wireless network.
+    .PARAMETER Authentication
+        The authentication type. Default: WPA2PSK
+    .PARAMETER Encryption
+        The encryption method. Default: AES
+    .EXAMPLE
+        Add-WifiNetwork -NetworkSSID "WiFi Name" -NetworkPassword "Pass12345"
+    #>
+
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [string]$NetworkSSID,
+
+        [Parameter(Mandatory = $True)]
+        [string]$NetworkPassword,
+
+        [ValidateSet('WEP', 'WPA', 'WPA2', 'WPA2PSK')]
+        [Parameter(Mandatory = $False)]
+        [string]$Authentication = 'WPA2PSK',
+
+        [ValidateSet('AES', 'TKIP')]
+        [Parameter(Mandatory = $False)]
+        [string]$Encryption = 'AES'
+    )
+
+    # Create the WiFi profile, set the profile to auto connect
+    $WirelessProfile = @'
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+	<name>{0}</name>
+	<SSIDConfig>
+		<SSID>
+			<name>{0}</name>
+		</SSID>
+	</SSIDConfig>
+	<connectionType>ESS</connectionType>
+	<connectionMode>auto</connectionMode>
+	<MSM>
+		<security>
+			<authEncryption>
+				<authentication>{2}</authentication>
+				<encryption>{3}</encryption>
+				<useOneX>false</useOneX>
+			</authEncryption>
+			<sharedKey>
+				<keyType>passPhrase</keyType>
+				<protected>false</protected>
+				<keyMaterial>{1}</keyMaterial>
+			</sharedKey>
+		</security>
+	</MSM>
+</WLANProfile>
+'@ -f $NetworkSSID, $NetworkPassword, $Authentication, $Encryption
+
+    # Create the XML file locally
+    $tempProfileXML = "$env:TEMP\TempWLANProfile.xml"
+    $WirelessProfile | Out-File $tempProfileXML -Force
+
+    # Add the WiFi profile
+    Try {
+        Start-Process netsh ('wlan add profile filename={0}' -f $tempProfileXML)
+        
+    }
+    Catch {
+        Write-Host 'Could not add wireless profile with SSID: {0}' -f $NetworkSSID
+    }
+
+    # Remove temp profile
+    Remove-Item -Force $tempProfileXML
+}
