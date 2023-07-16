@@ -1,0 +1,22 @@
+Function Disable-FastStartup {
+    <#
+    .SYNOPSIS
+        Disables Windows Fast Startup by adding/editing the registry and 
+        disabling hibernate via powercfg.
+    .EXAMPLE
+        Disable-FastStartup
+    #>
+
+	Write-Host 'Disable Windows Fast Startup' -ForegroundColor Cyan
+    
+    Try {
+        REG ADD "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d "0" /f
+        Write-Host 'Adding registry key.' -ForegroundColor Green
+
+        powercfg -hibernate off
+        Write-Host 'Setting hibernate to off.' -ForegroundColor Green
+    }
+    Catch {
+        Write-Host 'Failed to disable fast startup' -ForegroundColor Red
+    }
+}
