@@ -1,0 +1,91 @@
+Function Update-DellPackages {
+    <#
+	.SYNOPSIS
+		Uses the CLI version of Dell Command | Update to install any missing drivers/firmwares/Bios and update existing ones.
+		There are no parameters to use.
+	.LINK
+		https://www.dell.com/support/kbdoc/en-us/000177325/dell-command-update
+	.EXAMPLE
+		Update-DellPackages
+	#>
+
+    Function Install-DCU {
+        #Install the latest version
+        Stop-Process -Name DellCommandUpdate -Force -ErrorAction SilentlyContinue
+        winget install Dell.CommandUpdate.Universal --force --accept-source-agreements --accept-package-agreements
+    }
+
+    Write-Host "Dell Updates"
+    $Manufacturer = (Get-CimInstance -Class Win32_ComputerSystem).Manufacturer
+    If ( $Manufacturer -like "*Dell*") {
+        If (Get-Command winget) {
+            Write-Host "> Updating App Installer"
+            winget upgrade "App Installer" --accept-source-agreements --accept-package-agreements
+        }
+        Else {
+            Install-WinGet
+        }
+
+        Write-Host "> Checking if 'Dell Command Update' is current."
+
+        #Remove any Windows 10 "Apps"
+        Get-ProvisionedAppPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*Dell*Update*" } | Remove-ProvisionedAppPackage -Online
+        Get-AppxPackage "*Dell*Update*" -ErrorAction SilentlyContinue | Remove-AppxPackage
+        Get-Package "Dell*Windows 10" -ErrorAction SilentlyContinue | Uninstall-Package -AllVersions -Force
+    
+        If (Get-AppxPackage *Dell*Update*) {
+            $apps = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall, HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall | Get-ItemProperty | Where-Object { $_.DisplayName -like "Dell*Update*" } | Select-Object -Property DisplayName, UninstallString
+            ForEach ($ver in $apps) {
+                If ($ver.UninstallString) {
+                    $uninst = $ver.UninstallString
+                    Write-Host Uninstalling: $ver.DisplayName
+                    Start-Process cmd -ArgumentList "/c $uninst /quiet /norestart" -NoNewWindow -Wait -PassThru
+                }
+            }
+        }
+
+        #Compare version numbers of any remaining installed version.
+        $DCUInstalledVersion = (Get-Package -Provider Programs -IncludeWindowsInstaller -Name "Dell Command | Update" -ErrorAction SilentlyContinue).Version
+        $DCUAvailableVersion = winget show Dell.CommandUpdate.Universal #Gets all results
+        $DCUAvailableVersion = ($DCUAvailableVersion | Select-String -Pattern "Version: " -SimpleMatch).Line
+        $DCUAvailableVersion = $DCUAvailableVersion.split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)[1]
+
+        If (-not $DCUInstalledVersion) {
+            Write-Host "> 'Dell Command Update' is not installed, installing now."
+            Install-DCU
+        }
+        ElseIf ($DCUInstalledVersion -ne $DCUAvailableVersion) {
+            Write-Host "> 'Dell Command Update' is not current. Updating from version $DCUInstalledVersion to $DCUAvailableVersion."
+
+            #Remove any programs listed through "Add and remove programs"
+            $DCUInstalled = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*Dell*Update*" }
+            If ($DCUInstalled) {
+                $DCUInstalled.Uninstall()
+            }
+            Install-DCU
+        }
+        ElseIf ($DCUInstalledVersion -eq $DCUAvailableVersion) {
+            Write-Host "> 'Dell Command Update' is current."
+        }
+
+        Dell.CommandUpdate.Universal
+        #Configure and run Dell Command Update
+        Stop-Process -Name DellCommandUpdate -Force -ErrorAction SilentlyContinue
+
+        $DCUx86 = Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath "Dell\CommandUpdate\dcu-cli.exe"
+        $DCUx64 = Join-Path -Path $Env:ProgramFiles -ChildPath "Dell\CommandUpdate\dcu-cli.exe"
+
+        If (Test-Path $DCUx86) {
+            & $DCUx86 /configure -silent -autoSuspendBitLocker=enable -userConsent=disable -scheduleManual 
+            & $DCUx86 /applyUpdates -reboot=disable
+        }
+        ElseIf (Test-Path $DCUx64) {
+            & $DCUx64 /configure -silent -autoSuspendBitLocker=enable -userConsent=disable -scheduleManual 
+            & $DCUx64 /applyUpdates -reboot=disable
+        }
+        Else { Write-Error "> Dell Command Update CLI not found." }
+
+    }
+    Else { Write-Host "> This is not a Dell Computer" }
+    Write-Host "`n> End of Dell Updates"
+}
