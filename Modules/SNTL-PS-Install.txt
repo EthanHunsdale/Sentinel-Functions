@@ -102,3 +102,70 @@ Function Install-Office365 {
         }
     }
 }
+
+Function Install-SiteApps {
+    <#
+    .SYNOPSIS
+        Installs Applications from a CSV File.
+    .PARAMETER CSVPath
+        The path to the CSV File.
+    .PARAMETER SiteCode
+        The site code to install specific software for.
+    .PARAMETER InstallOther
+        Install specific software over others as identified in the CSV.
+    .EXAMPLE
+        Install-SiteApps -CSVPath "C:\Data\file.csv"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $CSVPath,
+
+        [Parameter(Mandatory = $True)]
+        [String] $SiteCode,
+
+        [Parameter(Mandatory = $True)]
+        [Switch] $InstallOther
+    )
+
+    Begin {
+        Write-Host "Installing Site Apps"
+        Write-Host "> Importing CSV Data"
+
+        $Apps = Import-Csv -Path $CSVPath
+    }
+
+    Process {
+        
+    }
+}
+
+Install-WinGet {
+    <#
+    .SYNOPSIS
+        Installs Microsoft App Installer if not already available.
+    .EXAMPLE
+        Install-WinGet
+    #>
+
+    Begin {
+        Write-Host "Installing Microsoft App Installer"
+    }
+
+    Process {
+        Try {
+            # Check if WinGet already installed
+            If (-not (Get-AppxPackage *DesktopAppInstaller*)) {
+                # Install WinGet
+                Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
+                Write-Host "> Installed Microsoft App Installer" -ForegroundColor Green
+            }
+            Else {
+                Write-Host "> Microsoft App Installer already installed" -ForegroundColor Yellow
+            }
+        }
+        Catch {
+            Write-Host "> Error installing Micrsoft App Installer" -ForegroundColor Red
+        }
+    }
+}
