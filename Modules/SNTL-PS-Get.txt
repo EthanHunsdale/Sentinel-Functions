@@ -9,12 +9,12 @@ Function Get-SNTLPS {
     #>
 
     Param (
-        [Parameter(Mandatory = $False)]
-        [switch] $Force
-    )
+        [Parameter(Mandatory = $True)]
+        [String] $ScriptURL,
 
-    # Set the Functions URL.
-    $InstallScript = 'https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Get-SNTLPS.txt'
+        [Parameter(Mandatory = $False)]
+        [Switch] $Force
+    )
 
     # Install functions
     $progressPreference = 'silentlyContinue'
@@ -68,7 +68,7 @@ Function Get-USBPath {
         [String] $FolderName
     )
 
-    $DriveLetter = (Get-WmiObject Win32_Volume | Where-Object Label -like $DriveName).DriveLetter
+    $DriveLetter = (Get-WmiObject Win32_Volume | Where-Object Label -Like $DriveName).DriveLetter
     $FolderPath = "{0}\{1}" -F $DriveLetter, $FolderName
 
     If (Test-Path $FolderPath) {
