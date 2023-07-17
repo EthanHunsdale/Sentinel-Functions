@@ -3,7 +3,8 @@ Function Start-Win10Decrapify {
     .SYNOPSIS
         Runs Windows 10 Decrapifier by CSAND.
         Version in Sentinel-Functions GitHub is modified to set a few switches to true.
-        Source: https://community.spiceworks.com/scripts/show/4378-windows-10-decrapifier-18xx-19xx-2xxx
+    .LINK
+        https://community.spiceworks.com/scripts/show/4378-windows-10-decrapifier-18xx-19xx-2xxx
     .PARAMETER ScriptURL
         URL to raw script file.
     .EXAMPLE
