@@ -222,3 +222,27 @@ Function Update-WindowsApps {
     }
 
 }
+
+Function Update-WindowTitle {
+    <#
+	.SYNOPSIS
+        Sets the title of the window to a custom string.
+    .PARAMETER PassNumber
+        The script number, first script would be 1.
+    .PARAMETER SiteCode
+        The unique code for the site.
+	.EXAMPLE
+		Update-WindowTitle -PassNumber "1" -SiteCode "ABC"
+	#>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $PassNumber,
+
+        [Parameter(Mandatory = $False)]
+        [String] $SiteCode
+    )
+
+    Write-Host "Changing window title"
+    $host.ui.RawUI.WindowTitle = "$SiteCode Provisioning | $env:computername | Pass $PassNumber | Please Wait"
+}
