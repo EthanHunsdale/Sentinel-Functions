@@ -110,6 +110,7 @@ Function Update-Windows {
 
     Begin {
         Write-Host "Windows Updates"
+        Set-ExecutionPolicy Bypass -Scope Process -Force
         $WUService = Get-Service wuauserv
 
         # Start Windows Update service if stopped
