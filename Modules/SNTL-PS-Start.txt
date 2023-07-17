@@ -25,3 +25,27 @@ Function Start-Win10Decrapify {
 
     Process { Invoke-WebRequest $ScriptURL -UseBasicParsing | Invoke-Expression }
 }
+
+Function Start-PPKGLog {
+    <#
+	.SYNOPSIS
+        Starts a transcript with a specific name.
+    .PARAMETER LogLabel
+        A short string for the log title
+    .PARAMETER SiteCode
+        The unique code for the site.
+	.EXAMPLE
+		Start-PPKGLog -LogLabel "Pass1" -SiteCode "ABC"
+	#>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $LogLabel,
+
+        [Parameter(Mandatory = $False)]
+        [String] $SiteCode
+    )
+    Write-Host "Creating Log File"
+    $LogPath = "C:\IT\" + $SiteCode + "-" + $LogLabel + ".log"
+    Start-Transcript -Path $LogPath -Force -Append
+}
