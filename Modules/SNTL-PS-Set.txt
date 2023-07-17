@@ -1,0 +1,30 @@
+Function Set-RunOnceScript {
+    <#
+	.SYNOPSIS
+        Sets the title of the window to a custom string.
+    .PARAMETER Label
+        Name the registry key
+    .PARAMETER Script
+        The path to the script to run.
+	.EXAMPLE
+		Set-RunOnceScript -Label "Pass2" -Script "C:\IT\Script2.ps1"
+	#>
+    
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String]$Label,
+
+        [Parameter(Mandatory = $True)]
+        [String]$Script
+    )
+
+    Begin {
+        Write-Host "Setting run-once script."
+        $RunOnceValue = 'PowerShell.exe -ExecutionPolicy Bypass -File "' + $Script + '"'
+    }
+
+    Process {
+        Set-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name $Label -Value $RunOnceValue
+        Write-Host "Run-once script set"
+    }
+}
