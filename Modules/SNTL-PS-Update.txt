@@ -93,11 +93,17 @@ Function Update-DellPackages {
 Function Update-Windows {
     <#
 	.SYNOPSIS
-        Calls a windows update script to ensure Windows is fully updated.
+        Function to update windows.
     .LINK
         https://raw.githubusercontent.com/AmbitionsTechnologyGroup/ATG-PS-Functions/master/Scripts/Windows-Update/UpdateWindows.txt
+    .PARAMETER NoSofware
+        Set whether to exclude software during windows update. 
+        Set to false to exclude software.
+    .PARAMETER NoDrivers
+        Set whether to exclude drivers during windows update. 
+        Set to false to exclude drivers.
 	.EXAMPLE
-		Update-Windows -ScriptURL "https://example.com/scripts/windows-update.txt"
+		Update-Windows -NoDrivers $False
 	#>
 
     Param (
@@ -192,4 +198,27 @@ Function Update-Windows {
         }
         Write-Host "End of Install Windows Updates"
     }
+}
+
+Function Update-WindowsApps {
+    <#
+	.SYNOPSIS
+        Launches Microsoft Store and updates installed apps.
+	.EXAMPLE
+		Update-WindowsApps
+	#>
+
+    Begin {
+        Write-Host "Updating Windows Apps"
+
+        Start-Process ms-windows-store:
+        Start-Sleep -Seconds 5
+    }
+
+    Process {
+	    (Get-WmiObject -Namespace "root\cimv2\mdm\dmmap" -Class "MDM_EnterpriseModernAppManagement_AppManagement01").UpdateScanMethod()
+        
+        Write-Host "Update Windows Apps initiated"
+    }
+
 }
