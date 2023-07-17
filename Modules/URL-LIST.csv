@@ -1,3 +1,15 @@
 Verb,URL
 SNTL-PS-Export,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Export.txt
 SNTL-PS-Get,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Get.txt
+SNTL-PS-Add,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Add.txt
+SNTL-PS-Connect,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Connect.txt
+SNTL-PS-Copy,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Copy.txt
+SNTL-PS-Disable,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Disable.txt
+SNTL-PS-Enable,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Enable.txt
+SNTL-PS-Install,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Install.txt
+SNTL-PS-Invoke,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Invoke.txt
+SNTL-PS-Join,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Join.txt
+SNTL-PS-Remove,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Remove.txt
+SNTL-PS-Set,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Set.txt
+SNTL-PS-Start,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Start.txt
+SNTL-PS-Update,https://raw.githubusercontent.com/EthanHunsdale/Sentinel-Functions/main/Modules/SNTL-PS-Update.txt
