@@ -1,0 +1,42 @@
+Function Join-Domain {
+    <#
+	.SYNOPSIS
+        Joins the specified domain with the specified credentials.
+	.PARAMETER Domain
+		The domain to join the computer to.
+    .PARAMETER Username
+        Username of account with permission to join computers to domains.
+    .PARAMETER Password
+        The account password.
+	.EXAMPLE
+		Join-Domain -Domain "Example.local" -Username "Administrator" -Password "Password1234"
+	#>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $Domain,
+
+        [Parameter(Mandatory = $True)]
+        [String] $Username,
+
+        [Parameter(Mandatory = $True)]
+        [String] $Password
+    )
+
+    Begin {
+        Write-Host "Join Domain"
+        $Password = $Password | ConvertTo-SecureString -AsPlainText -Force
+        $Username = $Domain + "\" + $Username
+        $credential = New-Object System.Management.Automation.PSCredential($Username, $Password)
+    }
+
+    Process {
+        Try {
+            Add-Computer -DomainName $Domain -Credential $credential
+            Write-Host "Successfully joined the $Domain domain." -ForegroundColor Green
+        }
+        Catch {
+            Write-Host "Unable to join the $Domain domain." -ForegroundColor Red
+        }
+    }
+}
