@@ -187,12 +187,10 @@ Function Install-WinGet {
         $request = [System.Net.WebRequest]::Create($url)
         $response = $request.GetResponse()
         $realTagUrl = $response.ResponseUri.OriginalString
-        $version = $realTagUrl.split('/')[-1].Trim('v')
         $fileName = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
         $realDownloadUrl = $realTagUrl.Replace('tag', 'download') + '/' + $fileName
 
         Write-Host "Installing the latest version of winget from:`n $realDownloadUrl"
-        $DownloadLocation = $($env:temp)
 
         Write-Host "Downloading Desktop App Installer"
         If (-not (Get-Command -Name "Get-FileDownload" -ErrorAction SilentlyContinue)) {
