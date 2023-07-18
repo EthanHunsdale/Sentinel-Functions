@@ -839,7 +839,6 @@ Function Install-SiteApps {
                 $MstPath = $App.Path + $App.MST
                 $Install = $App.Install
 
-                
                 If (Test-Path $AppPath) {
                     If ($Install -eq "Y") {
                         Write-Host "Installing $Application"
