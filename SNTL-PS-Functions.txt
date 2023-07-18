@@ -368,7 +368,7 @@ Function Export-StaffMailboxPermissions {
 
     If ($CSVpath) {
         # Get mailbox status
-        Get-AllMailboxPermissions | Export-CSV -Path $CSVpath -NoTypeInformation -Encoding UTF8
+        Get-AllMailboxPermissions | Export-Csv -Path $CSVpath -NoTypeInformation -Encoding UTF8
         If ((Get-Item $CSVpath).Length -gt 0) {
             Write-Host "Report finished and saved in $CSVpath" -ForegroundColor Green
         } 
@@ -730,19 +730,16 @@ Function Install-Office365 {
     #>
 
     Param (
-        [Parameter(Mandatory = $False)]
-        [String] $SiteCode = "Generic",
-
         [Parameter(Mandatory = $True)]
-        [String] $DataFolder
+        [String] $SiteCode
     )
 
     Begin {
         Write-Host "Starting Office 365 Installation"
 
         # Installation Variables 
-        $O365Setup = "{0}\O365\setup.exe" -f $DataFolder
-        $O365Xml = "{0}\O365\{1}_O365_Config.xml" -f $DataFolder, $SiteCode
+        $O365Setup = "C:\IT\Software\O365\setup.exe"
+        $O365Xml = "C:\IT\Software\O365\{1}_O365_Config.xml" -f $SiteCode
         $Installed = $False
 
         # Shortcut Variables 
@@ -756,7 +753,7 @@ Function Install-Office365 {
 
         Try {
             # Install Office 365
-            Start-Process $O365Setup -ArgumentList "/configure $O365Xml" -Wait -NoNewWindow
+            Start-Process $O365Setup -ArgumentList "/configure $O365Xml" | Wait-Process
             
             $Installed = $True
             Write-Host "Office 365 Installed" -ForegroundColor Green
@@ -770,8 +767,8 @@ Function Install-Office365 {
 
             ForEach ($App in $O365Apps.Keys) {
                 # Set Path variables for O365 root
-                $Path64 = "{0}{1}.exe" -F $O365Root64, $($O365[$App])
-                $Path32 = "{0}{1}.exe" -F $O365Root32, $($O365[$App])
+                $Path64 = "{0}{1}.exe" -f $O365Root64, $($O365Apps[$App])
+                $Path32 = "{0}{1}.exe" -f $O365Root32, $($O365Apps[$App])
 
                 Try {
                     # Confirm Office 365 version
@@ -783,21 +780,21 @@ Function Install-Office365 {
                     }
 
                     # Create the shortcut on public desktop
-                    $ShortcutFile = "$env:Public\Desktop\{0}.lnk" -F $App
+                    $ShortcutFile = "$env:Public\Desktop\{0}.lnk" -f $App
                     $WScriptShell = New-Object -ComObject WScript.Shell
                     $Shortcut = $WScriptShell.CreateShortcut($ShortcutFile)
                     $Shortcut.TargetPath = $TargetFile
                     $Shortcut.Save()
 
-                    Write-Host "> Added $App shortcut" -ForegroundColor Green
+                    Write-Host "Added $App shortcut" -ForegroundColor Green
                 }
                 Catch {
-                    Write-Host "> Could not place shortcuts" -ForegroundColor Red
+                    Write-Host "Could not place shortcuts" -ForegroundColor Red
                 }
             }
         }
         Else {
-            Write-Host "> Could not place shortcuts" -ForegroundColor Red
+            Write-Host "Could not place shortcuts" -ForegroundColor Red
         }
     }
 }
@@ -826,7 +823,7 @@ Function Install-SiteApps {
 
     Begin {
         Write-Host "Installing Site Apps"
-        Write-Host "> Importing CSV Data"
+        Write-Host "Importing CSV Data"
 
         If (Test-Path $CSVPath) {
             $AppsList = Import-Csv -Path $CSVPath -Delimiter ","
@@ -837,63 +834,44 @@ Function Install-SiteApps {
         If ($AppsList) {
             Write-Host "Installing $SiteCode Applications"
             ForEach ($App in $AppsList) {
-                $Application = $App.AppName
-                $AppPath = $App.Path
-                $Arguments = $App.Arguments
-                $InstallType = $App.InstallType
+                $Application = $App.App
+                $AppPath = $App.Path + $Application
+                $MstPath = $App.Path + $App.MST
                 $Install = $App.Install
-                $AdminRights = $App.AdminRights
 
-                Write-Host "Installing $Application"
-                If ($Install -eq "Y") {
-                    If ($InstallType -eq "WinGet") {
-                        winget install -e --id $AppPath -h --accept-package-agreements --accept-source-agreements
-                    }
-                    ElseIf ($InstallType -eq "File") {
-                        If ($AppPath.endsWith(".msi")) {
-                            If ($AdminRights -eq "Y") {
-                                Start-Process msiexec.exe -ArgumentList $Arguments -Wait -NoNewWindow -Verb RunAs
-                            }
-                            Else {
-                                Start-Process msiexec.exe -ArgumentList $Arguments -Wait -NoNewWindow
-                            }
-                        }
-                        ElseIf ($AppPath.endsWith(".exe")) {
-                            If ($AdminRights -eq "Y") {
-                                Start-Process $AppPath -ArgumentList $Arguments -Wait -NoNewWindow -Verb RunAs
-                            }
-                            Else {
-                                Start-Process $AppPath -ArgumentList $Arguments -Wait -NoNewWindow
-                            }
-                        }
-                    }
+                
+                If (Test-Path $AppPath) {
+                    If ($Install -eq "Y") {
+                        Write-Host "Installing $Application"
+                        If ($App.MST -eq "") {
+                            $Arguments = @(
+                                "/i",
+                                $AppPath,
+                                "/quiet"
+                            )
 
-                    Write-Host "Skipping Install for $Application"
+                            Start-Process msiexec.exe -ArgumentList $Arguments -Wait -NoNewWindow
+                        }
+                        ElseIf (-not $App.MST -eq "") {
+                            $Arguments = @(
+                                "/i"
+                                $AppPath,
+                                "TRANSFORMS={0}",
+                                "/quiet"
+                            ) -f $MstPath
+
+                            Start-Process msiexec.exe -ArgumentList $Arguments -Wait -NoNewWindow
+                        }
+                        Else {
+                            Write-Host "Could not install $Application"
+                        }
+                    }
                 }
             }
 
             Write-Host "App Installation Complete"
         }
     }
-}
-
-Function Install-WinGet {
-    <#
-    .SYNOPSIS
-        Install WinGet 
-    .EXAMPLE
-        Install-WinGet
-    #>
-
-    Begin {
-        Write-Information "Installing winget"
-        $progressPreference = 'silentlyContinue'
-    }
-
-    Process {
-        Add-AppxPackage -Path 'https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
-        Write-Host "Installed WinGet"
-    }    
 }
 
 Function Install-ALB {
@@ -947,7 +925,7 @@ Function Install-ALB {
         If (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5")) {
             $USBPath = Get-USBPath -DriveName "ESD-USB"
             $ArgumentList = "DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:{0}sources\sxs" -F $USBPath
-            Start-Process -FilePath powershell.exe -ArgumentList { $ArgumentList } -verb RunAs -Wait
+            Start-Process -FilePath powershell.exe -ArgumentList { $ArgumentList } -Verb RunAs -Wait
         }
 
         Write-Host "Installing .NET Framework 4.7.2"
@@ -2046,7 +2024,7 @@ Function Update-O365Apps {
 
     If ($CSVpath) {
         # Get mailbox status
-        Get-AllMailboxPermissions | Export-CSV -Path $CSVpath -NoTypeInformation -Encoding UTF8
+        Get-AllMailboxPermissions | Export-Csv -Path $CSVpath -NoTypeInformation -Encoding UTF8
         If ((Get-Item $CSVpath).Length -gt 0) {
             Write-Host "Report finished and saved in $CSVpath" -ForegroundColor Green
         } 
@@ -3601,7 +3579,7 @@ Function Export-StaffMailboxPermissions {
 
     If ($CSVpath) {
         # Get mailbox status
-        Get-AllMailboxPermissions | Export-CSV -Path $CSVpath -NoTypeInformation -Encoding UTF8
+        Get-AllMailboxPermissions | Export-Csv -Path $CSVpath -NoTypeInformation -Encoding UTF8
         If ((Get-Item $CSVpath).Length -gt 0) {
             Write-Host "Report finished and saved in $CSVpath" -ForegroundColor Green
         } 
