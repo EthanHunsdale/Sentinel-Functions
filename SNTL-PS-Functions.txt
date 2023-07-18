@@ -887,23 +887,11 @@ Function Install-WinGet {
 
     Begin {
         Write-Information "Installing winget"
-
         $progressPreference = 'silentlyContinue'
-        $latestWingetMsixBundleUri = $(Invoke-RestMethod https://api.github.com/repos/microsoft/winget-cli/releases/latest).assets.browser_download_url | Where-Object { $_.EndsWith(".msixbundle") }
-        $latestWingetMsixBundle = $latestWingetMsixBundleUri.Split("/")[-1]
     }
 
     Process {
-        Set-Location "C:\IT\"
-        Invoke-WebRequest -Uri $latestWingetMsixBundleUri -OutFile "./$latestWingetMsixBundle"
-        Invoke-WebRequest -Uri https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx -OutFile "Microsoft.VCLibs.x64.14.00.Desktop.appx"
-        Add-AppxPackage Microsoft.VCLibs.x64.14.00.Desktop.appx
-        Add-AppxPackage $latestWingetMsixBundle
-    
-        If (-not (winget -v)) {
-            Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
-        }
-        
+        Add-AppxPackage -Path 'https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
         Write-Host "Installed WinGet"
     }    
 }
@@ -1689,6 +1677,1561 @@ Function Update-O365Apps {
     }
     
 }Function Export-StaffMailboxPermissions {
+    <#
+  .SYNOPSIS
+  Create report of all mailbox permissions
+  .DESCRIPTION
+  Get all mailbox permissions, including folder permissions for all or a selected group of users
+  .EXAMPLE
+  Generate the mailbox report with Shared mailboxes, store the csv file in the script root location.
+  Export-StaffMailboxPermissions -adminUPN john@contoso.com
+  .EXAMPLE
+  Get only the shared mailboxes
+  Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes only
+  .EXAMPLE
+  Get only the user mailboxes
+  Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes no
+  .EXAMPLE
+  Get the mailbox permissions without the folder (inbox and calendar) permissions
+  Export-StaffMailboxPermissions -adminUPN john@contoso.com -folderPermissions:$false
+  .EXAMPLE
+  Get the mailbox permissions for a selection of users
+  Export-StaffMailboxPermissions -adminUPN john@contoso.com -UserPrincipalName jane@contoso.com,alex@contoso.com
+
+  .NOTES
+  Version:         1.0
+  Original Author: R. Mens - LazyAdmin.nl
+  Modified By:     E Hunsdale
+    #>
+
+    [CmdletBinding()]
+    Param(
+        [Parameter(
+            Mandatory = $true,
+            HelpMessage = "Enter the Exchange Online or Global admin username"
+        )]
+        [String]$adminUPN,
+
+        [Parameter(
+            Mandatory = $false,
+            HelpMessage = "Enter a single UserPrincipalName or a comma separted list of UserPrincipalNames"
+        )]
+        [String[]]$UserPrincipalName,
+
+        [Parameter(
+            Mandatory = $false,
+            HelpMessage = "Get (only) Shared Mailboxes or not. Default include them"
+        )]
+        [ValidateSet("no", "only", "include")]
+        [String]$sharedMailboxes = "include",
+
+        [Parameter(
+            Mandatory = $false,
+            HelpMessage = "Enter path to save the CSV file"
+        )]
+        [String]$CSVpath = ""
+    )
+
+    Function Connect-ToEXO {
+        <#
+      .SYNOPSIS
+          Connects to EXO when no connection exists. Checks for EXO v2 module
+    #>
+    
+        process {
+            # Check if EXO is installed and connect if no connection exists
+            If ($null -eq (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
+                Write-Host "Exchange Online PowerShell v2 module is requied, do you want to install it?" -ForegroundColor Yellow
+        
+                $install = Read-Host Do you want to install module? [Y] Yes [N] No 
+                If ($install -match "[yY]") { 
+                    Write-Host "Installing Exchange Online PowerShell v2 module" -ForegroundColor Cyan
+                    Install-Module ExchangeOnlineManagement -Repository PSGallery -AllowClobber -Force
+                } 
+                else {
+                    Write-Error "Please install EXO v2 module."
+                }
+            }
+
+            If ($null -ne (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
+                # Check if there is a active EXO sessions
+                $psSessions = Get-PSSession | Select-Object -Property State, Name
+                If (((@($psSessions) -like '@{State=Opened; Name=ExchangeOnlineInternalSession*').Count -gt 0) -ne $true) {
+                    Connect-ExchangeOnline -UserPrincipalName $adminUPN
+                }
+            }
+            Else {
+                Write-Error "Please install EXO v2 module."
+            }
+        }
+    }
+
+    Function Get-DisplayName {
+        <#
+      .SYNOPSIS
+        Get the full displayname (if requested) or return only the userprincipalname
+    #>
+        Param(
+            [Parameter(
+                Mandatory = $true
+            )]
+            $identity
+        )
+
+        Try {
+            Return (Get-EXOMailbox -Identity $identity -ErrorAction Stop).DisplayName
+        }
+        Catch {
+            Return $identity
+        }
+    }
+
+    Function Get-SingleUser {
+        <#
+      .SYNOPSIS
+        Get only the requested mailbox
+    #>
+        Param(
+            [Parameter(
+                Mandatory = $true
+            )]
+            $identity
+        )
+  
+        Get-EXOMailbox -Identity $identity -Properties GrantSendOnBehalfTo, ForwardingSMTPAddress | 
+        Select-Object UserPrincipalName, DisplayName, PrimarySMTPAddress, RecipientType, RecipientTypeDetails, GrantSendOnBehalfTo, ForwardingSMTPAddress
+    }
+
+    Function Get-AllMailboxes {
+        <#
+      .SYNOPSIS
+          Get all the mailboxes for the report
+    #>
+        Process {
+            Switch ($sharedMailboxes) {
+                "include" { $mailboxTypes = "UserMailbox,SharedMailbox" }
+                "only" { $mailboxTypes = "SharedMailbox" }
+                "no" { $mailboxTypes = "UserMailbox" }
+            }
+  
+            Get-EXOMailbox -ResultSize unlimited -RecipientTypeDetails $mailboxTypes -Properties GrantSendOnBehalfTo, ForwardingSMTPAddress | 
+            Select-Object UserPrincipalName, DisplayName, PrimarySMTPAddress, RecipientType, RecipientTypeDetails, GrantSendOnBehalfTo, ForwardingSMTPAddress
+        }
+    }
+
+    Function Get-SendOnBehalf {
+        <#
+      .SYNOPSIS
+          Get Display name for each Send on Behalf entity
+    #>
+        Param(
+            [Parameter(
+                Mandatory = $true
+            )]
+            $mailbox
+        )
+  
+        # Get Send on Behalf
+        $SendOnBehalfAccess = @();
+        If ($null -ne $mailbox.GrantSendOnBehalfTo) {
+      
+            # Get a proper displayname of each user
+            $mailbox.GrantSendOnBehalfTo | ForEach-Object {
+                $sendOnBehalfAccess += Get-DisplayName -identity $_
+            }
+        }
+        Return $SendOnBehalfAccess
+    }
+
+    Function Get-SendAsPermissions {
+        <#
+      .SYNOPSIS
+          Get all users with Send as Permissions
+    #>
+        Param(
+            [Parameter(
+                Mandatory = $true
+            )]
+            $identity
+        )
+        Write-Host $identity;
+        $users = Get-EXORecipientPermission -Identity $identity | Where-Object { -not ($_.Trustee -match "NT AUTHORITY") -and ($_.IsInherited -eq $false) }
+  
+        $sendAsUsers = @();
+    
+        # Get a proper displayname of each user
+        $users | ForEach-Object {
+            $sendAsUsers += Get-DisplayName -identity $_.Trustee
+        }
+        Return $sendAsUsers
+    }
+
+    Function Get-FullAccessPermissions {
+        <#
+      .SYNOPSIS
+          Get all users with Read and manage (full access) permissions
+    #>
+        Param(
+            [Parameter(
+                Mandatory = $true
+            )]
+            $identity
+        )
+    
+        $users = Get-EXOMailboxPermission -Identity $identity | Where-Object { -not ($_.User -match "NT AUTHORITY") -and ($_.IsInherited -eq $false) }
+  
+        $fullAccessUsers = @();
+    
+        # Get a proper displayname of each user
+        $users | ForEach-Object {
+            $fullAccessUsers += Get-DisplayName -identity $_.User
+        }
+        Return $fullAccessUsers
+    }
+
+    Function Get-FolderPermissions {
+        <#
+      .SYNOPSIS
+        Get Inbox folder permisions
+    #>
+        Param(
+            [Parameter(Mandatory = $true)] $identity,
+            [Parameter(Mandatory = $true)] $folder
+        )
+    
+        $return = @{
+            users      = @()
+            permission = @()
+            delegated  = @()
+        }
+  
+        Try {
+            $ErrorActionPreference = "Stop"; #Make all errors terminating
+            $users = Get-EXOMailboxFolderPermission -Identity "$($identity):\$($folder)" | Where-Object { -not ($_.AccessRights -match "None") }
+        }
+        Catch {
+            Return $return
+        }
+        Finally {
+            $ErrorActionPreference = "Continue"; #Reset the error action pref to default
+        }
+  
+        $folderUsers = @();
+        $folderAccessRights = @();
+        $folderDelegated = @();
+    
+        # Get a proper displayname of each user
+        $users | ForEach-Object {
+            $folderUsers += Get-DisplayName -identity $_.User
+            $folderAccessRights += $_.AccessRights
+            $folderDelegated += $_.SharingPermissionFlags
+        }
+  
+        $return.users = $folderUsers
+        $return.permission = $folderAccessRights
+        $return.delegated = $folderDelegated
+  
+        Return $return
+    }
+ 
+    Function Get-AllMailboxPermissions {
+        <#
+      .SYNOPSIS
+        Get all the permissions of each mailbox
+          
+        Permission are spread into 4 parts.
+        - Read and Manage permission
+        - Send as Permission
+        - Send on behalf of permission
+        - Folder permissions (inbox and calendar set by the user self)
+    #>
+        Process {
+  
+            If ($UserPrincipalName) {
+        
+                Write-Host "Collecting mailboxes" -ForegroundColor Cyan
+                $mailboxes = @()
+  
+                # Get the requested mailboxes
+                ForEach ($user in $UserPrincipalName) {
+                    Write-Host "- Get mailbox $user" -ForegroundColor Cyan
+                    $mailboxes += Get-SingleUser -identity $user
+                }
+            }
+            Else {
+                Write-Host "Collecting mailboxes" -ForegroundColor Cyan
+                $mailboxes = Get-AllMailboxes
+            }
+      
+            $i = 0
+            Write-Host "Collecting permissions" -ForegroundColor Cyan
+            $mailboxesqty = $mailboxes.Count
+            $mailboxes | ForEach-Object {
+       
+                # Get Send on Behalf Permissions
+                $sendOnbehalfUsers = Get-SendOnBehalf -mailbox $_
+        
+                # Get Fullaccess Permissions
+                $fullAccessUsers = Get-FullAccessPermissions -identity $_.UserPrincipalName
+  
+                # Get Send as Permissions
+                $sendAsUsers = Get-SendAsPermissions -identity $_.UserPrincipalName
+  
+                # Count number or records
+                $sob = if ($sendOnbehalfUsers -is [array]) { $sendOnbehalfUsers.Count } else { if ($null -ne $sendOnbehalfUsers) { 1 }else { 0 } }
+                $fa = if ($fullAccessUsers -is [array]) { $fullAccessUsers.Count } else { if ($null -ne $fullAccessUsers) { 1 }else { 0 } }
+                $sa = if ($sendAsUsers -is [array]) { $sendAsUsers.Count } else { if ($null -ne $sendAsUsers) { 1 }else { 0 } }
+        
+                If ($folderPermissions.IsPresent) {
+          
+                    # Get Inbox folder permission
+                    $inboxFolder = Get-FolderPermissions -identity $_.UserPrincipalName -folder $inboxFolderName
+                    $ib = $inboxFolder.users.Count
+  
+                    # Get Calendar permissions
+                    $calendarFolder = Get-FolderPermissions -identity $_.UserPrincipalName -folder $calendarFolderName
+                    $ca = $calendarFolder.users.Count
+                }
+                Else {
+                    $inboxFolder = @{
+                        users      = @()
+                        permission = @()
+                        delegated  = @()
+                    }
+                    $calendarFolder = @{
+                        users      = @()
+                        permission = @()
+                        delegated  = @()
+                    }
+                    $ib = 0
+                    $ca = 0
+                }
+       
+                $mostRecords = Find-LargestValue -sob $sob -fa $fa -sa $sa -ib $ib -ca $ca
+  
+                $x = 0
+                If ($mostRecords -gt 0) {
+            
+                    Do {
+                        [PSCustomObject]@{
+                            "Display Name"            = $_.DisplayName
+                            "Emailaddress"            = $_.PrimarySMTPAddress
+                            "Mailbox type"            = $_.RecipientTypeDetails
+                            "Read and manage"         = @($fullAccessUsers)[$x]
+                            "Send as"                 = @($sendAsUsers)[$x]
+                            "Send on behalf"          = @($sendOnbehalfUsers)[$x]
+                            "Inbox folder"            = @($inboxFolder.users)[$x]
+                            "Inbox folder Permission" = @($inboxFolder.permission)[$x]
+                            "Inbox folder Delegated"  = @($inboxFolder.delegated)[$x]
+                            "Calendar"                = @($calendarFolder.users)[$x]
+                            "Calendar Permission"     = @($calendarFolder.permission)[$x]
+                            "Calendar Delegated"      = @($calendarFolder.delegated)[$x]
+                        }
+                        $x++;
+  
+                        $currentUser = $_.DisplayName
+                        If ($mailboxes.Count -gt 1) {
+                            Write-Progress -Activity "Collecting mailbox permissions" -Status "Current count: $i of $mailboxesqty" -PercentComplete (($i / $mailboxes.Count) * 100) -CurrentOperation "Processing mailbox: $currentUser"
+                        }
+                    }
+                    While ($x -ne $mostRecords)
+                }
+                $i++;
+            }
+        }
+    }
+
+    # Connect to Exchange Online
+    Connect-ToEXO
+
+    If ($CSVpath) {
+        # Get mailbox status
+        Get-AllMailboxPermissions | Export-CSV -Path $CSVpath -NoTypeInformation -Encoding UTF8
+        If ((Get-Item $CSVpath).Length -gt 0) {
+            Write-Host "Report finished and saved in $CSVpath" -ForegroundColor Green
+        } 
+        Else {
+            Write-Host "Failed to create report" -ForegroundColor Red
+        }
+    }
+    Else {
+        Get-AllMailboxPermissions
+    }
+
+    # Close Exchange Online Connection
+    $close = Read-Host Close Exchange Online connection? [Y] Yes [N] No 
+
+    If ($close -match "[yY]") {
+        Disconnect-ExchangeOnline -Confirm:$false | Out-Null
+    }
+}
+
+
+Function Get-SNTLPS {
+    <#
+    .SYNOPSIS
+        Installs Sentinel-Functions from GitHub.
+    .PARAMETER Force
+        Set to true to overwrite existing functions.
+    .EXAMPLE
+        Get-SNTLPS -Force $True
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $ScriptURL,
+
+        [Parameter(Mandatory = $False)]
+        [Switch] $Force
+    )
+
+    # Install functions
+    $progressPreference = 'silentlyContinue'
+    If ($Force) {
+        Write-Host "Force loading latest functions." -ForegroundColor Cyan
+
+        Start-Job -ScriptBlock { 
+            Invoke-WebRequest $InstallScript -UseBasicParsing -Headers @{"Cache-Control" = "no-cache" } | Invoke-Expression 
+        } | Receive-Job -AutoRemoveJob -Wait
+    }
+    ElseIf (-Not (Get-Module -Name "SNTL-PS*")) {
+        Write-Host "Installing functions." -ForegroundColor Cyan
+        Invoke-WebRequest $InstallScript -UseBasicParsing | Invoke-Expression
+    }
+    Else {
+        Write-Host "Functions already loaded." -ForegroundColor Green
+    }
+
+    # List imported functions
+    Try {
+        Write-Host ====================================================
+        Write-Host "The below functions are now loaded and ready to use:" -ForegroundColor Cyan
+        Write-Host ====================================================
+        Get-Command -Module "SNTL-PS*" | Format-Wide -Column 3
+        Write-Host ====================================================
+        Write-Host "Type: 'Help <function name> -Detailed' for more info" -ForegroundColor Cyan
+        Write-Host ====================================================
+    }
+    Catch {
+        Write-Host "Error loading functions. Please try again." -ForegroundColor Red
+    }
+}
+
+Function Get-USBPath {
+    <#
+    .SYNOPSIS
+        Gets the path for the data folder on your install USB drive.
+    .PARAMETER DriveName
+        Required. The name of the usb drive
+    .PARAMETER FolderName
+        Optional. The name of the data folder on drive.
+    .EXAMPLE
+        Get-USBDataFolder -DriveName "Data" -FolderName "MyFolder"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $DriveName,
+
+        [Parameter(Mandatory = $False)]
+        [String] $FolderName
+    )
+
+    $DriveLetter = (Get-WmiObject Win32_Volume | Where-Object Label -Like $DriveName).DriveLetter
+    $FolderPath = "{0}\{1}" -F $DriveLetter, $FolderName
+
+    If (Test-Path $FolderPath) {
+        Return $FolderPath
+    }
+    Else {
+        Return $null
+    }
+}
+
+Function Get-RoboCopyProgress {
+    <#
+    .SYNOPSIS
+        Displays the current progress of your RoboCopy process.
+        You must pipe the RoboCopy process into this command.
+        Script found here: 'https://www.reddit.com/r/PowerShell/comments/p4l4fm/better_way_of_robocopy_writeprogress/h97skef/'
+    .EXAMPLE
+        Robocopy "C:\Temp1" "C:\Temp2" /E /NJH /IS /NJS /NDL /NC /BYTES | Get-RobocopyProgress
+    #>
+
+    Param (
+        [Parameter(Mandatory, ValueFromPipeline)]
+        $inputObject
+    )
+
+    Begin {
+        [String] $File = " "
+        [Double] $Percent = 0
+        [Double] $Size = $Null
+        [Double] $Count = (Get-ChildItem $SourcePath -File -Recurse -Force).Count
+        [Double] $FilesLeft = $Count
+        [Double] $Number = 0
+    }
+
+    Process {
+
+        $Host.PrivateData.ProgressBackgroundColor = 'Cyan' 
+        $Host.PrivateData.ProgressForegroundColor = 'Green'
+    
+        $Data = $InputObject -split '\x09'
+    
+        If (![String]::IsNullOrEmpty("$($Data[4])")) {
+            $File = $Data[4] -replace '.+\\(?=(?:.(?!\\))+$)'
+            $FilesLeft--
+            $Number++
+        }
+        If (![String]::IsNullOrEmpty("$($Data[0])")) {
+            $Percent = ($Data[0] -replace '%') -replace '\s'
+        }
+        If (![String]::IsNullOrEmpty("$($Data[3])")) {
+            $Size = $Data[3]
+        }
+        [String] $SizeString = switch ($Size) {
+            { $_ -gt 1TB -and $_ -lt 1024TB } {
+                "$("{0:n2}" -f ($Size / 1TB) + " TB")"
+            }
+            { $_ -gt 1GB -and $_ -lt 1024GB } {
+                "$("{0:n2}" -f ($Size / 1GB) + " GB")"
+            }
+            { $_ -gt 1MB -and $_ -lt 1024MB } {
+                "$("{0:n2}" -f ($Size / 1MB) + " MB")"
+            }
+            { $_ -ge 1KB -and $_ -lt 1024KB } {
+                "$("{0:n2}" -f ($Size / 1KB) + " KB")"
+            }
+            { $_ -lt 1KB } {
+                "$Size B"
+            }
+        }
+    
+        Write-Progress -Activity "   Currently Copying: ..\$File"`
+            -CurrentOperation  "Copying: $(($Number).ToString()) of $(($Count).ToString()) `nCopied: $(if($Number -le 0){($Number).ToString()}else{($Number - 1).ToString()}) / $(($Count).ToString()) `nFiles Left: $(($FilesLeft + 1).ToString())"`
+            -Status "Size: $SizeString       Complete: $Percent%"`
+            -PercentComplete $Percent
+    }
+}
+Function Add-WifiNetwork {
+    <#
+    .SYNOPSIS
+        Adds a wireless profile with the supplied parameters via netsh.
+        Does not connect to the wifi network.
+    .PARAMETER NetworkSSID
+        The name of the wireless network.
+    .PARAMETER NetworkPassword
+        The password of the wireless network.
+    .PARAMETER Authentication
+        The authentication type. Default: WPA2PSK
+    .PARAMETER Encryption
+        The encryption method. Default: AES
+    .EXAMPLE
+        Add-WifiNetwork -NetworkSSID "WiFi Name" -NetworkPassword "Pass12345"
+    #>
+
+    Param
+    (
+        [Parameter(Mandatory = $True)]
+        [string]$NetworkSSID,
+
+        [Parameter(Mandatory = $True)]
+        [string]$NetworkPassword,
+
+        [ValidateSet('WEP', 'WPA', 'WPA2', 'WPA2PSK')]
+        [Parameter(Mandatory = $False)]
+        [string]$Authentication = 'WPA2PSK',
+
+        [ValidateSet('AES', 'TKIP')]
+        [Parameter(Mandatory = $False)]
+        [string]$Encryption = 'AES'
+    )
+
+    # Create the WiFi profile, set the profile to auto connect
+    $WirelessProfile = @'
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+	<name>{0}</name>
+	<SSIDConfig>
+		<SSID>
+			<name>{0}</name>
+		</SSID>
+	</SSIDConfig>
+	<connectionType>ESS</connectionType>
+	<connectionMode>auto</connectionMode>
+	<MSM>
+		<security>
+			<authEncryption>
+				<authentication>{2}</authentication>
+				<encryption>{3}</encryption>
+				<useOneX>false</useOneX>
+			</authEncryption>
+			<sharedKey>
+				<keyType>passPhrase</keyType>
+				<protected>false</protected>
+				<keyMaterial>{1}</keyMaterial>
+			</sharedKey>
+		</security>
+	</MSM>
+</WLANProfile>
+'@ -f $NetworkSSID, $NetworkPassword, $Authentication, $Encryption
+
+    # Create the XML file locally
+    $tempProfileXML = "$env:TEMP\TempWLANProfile.xml"
+    $WirelessProfile | Out-File $tempProfileXML -Force
+
+    # Add the WiFi profile
+    Try {
+        Start-Process netsh ('wlan add profile filename={0}' -f $tempProfileXML)
+        
+    }
+    Catch {
+        Write-Host 'Could not add wireless profile with SSID: {0}' -f $NetworkSSID
+    }
+
+    # Remove temp profile
+    Remove-Item -Force $tempProfileXML
+}
+
+
+Function Copy-FolderData {
+    <#
+    .SYNOPSIS
+        Copy source folders and subfolders using robocopy.
+    .PARAMETER SourcePath
+        The path of the folder to be copied.
+    .PARAMETER DestinationPath
+        The path of the destination to copy to.
+    .EXAMPLE
+        Copy-FolderData -SourcePath "C:\SourceData" -DestinationPath "C:\DestinationFolder"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $SourcePath,
+
+        [Parameter(Mandatory = $True)]
+        [String] $DestinationPath
+    )
+
+    # Test if destination exists.
+    If (-not (Test-Path $DestinationPath)) {
+        New-Item -Path $DestinationPath -ItemType "directory"
+    }
+
+    # Start robocopy process and pipe to robocopy progress.
+    Try {
+        Write-Host "Starting Robocopy."
+        robocopy $SourcePath $DestinationPath /E /NJH /IS /NDL /NC /BYTES | Get-RoboCopyProgress
+    }
+    Catch {
+        Write-Host "A problem occurred when copying items." -ForegroundColor Red
+    }
+
+    # Copy verification
+    If ($LASTEXITCODE -le 1) {
+        Write-Host "Files copied successfully." -ForegroundColor Green
+    }
+    Else {
+        Write-Host "Some or all files failed to copy." -ForegroundColor Red
+    }
+}
+Function Disable-FastStartup {
+    <#
+    .SYNOPSIS
+        Disables Windows Fast Startup by adding/editing the registry and 
+        disabling hibernate via powercfg.
+    .EXAMPLE
+        Disable-FastStartup
+    #>
+
+    Write-Host 'Disable Windows Fast Startup' -ForegroundColor Cyan
+    
+    Try {
+        REG ADD "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d "0" /f
+        Write-Host 'Adding registry key.' -ForegroundColor Green
+
+        powercfg -hibernate off
+        Write-Host 'Setting hibernate to off.' -ForegroundColor Green
+    }
+    Catch {
+        Write-Host 'Failed to disable fast startup' -ForegroundColor Red
+    }
+}
+Function Enable-SSL {
+    <#
+    .SYNOPSIS
+        Enables SSL within the powershell session.
+    .EXAMPLE
+        Enable-SSL
+    #>
+
+    Write-Host "Enabling SSL" -ForegroundColor Cyan
+    Try {
+        # Set TLS 1.2 (3072), then TLS 1.1 (768), then TLS 1.0 (192)
+        # Use integers because the enumeration values for TLS 1.2 and TLS 1.1 won't
+        # exist in .NET 4.0, even though they are addressable if .NET 4.5+ is
+        # installed (.NET 4.5 is an in-place upgrade).
+        [System.Net.ServicePointManager]::SecurityProtocol = 3072 -bor 768 -bor 192
+        
+        Write-Host 'SSL enabled successfully.' - -ForegroundColor Green
+    }
+    Catch {
+        Write-Host 'Unable to set PowerShell to use TLS 1.2 and TLS 1.1 due to old .NET Framework installed. If you see underlying connection closed or trust errors, you may need to upgrade to .NET Framework 4.5+ and PowerShell v3+.' -ForegroundColor Red
+    }
+}
+Function Install-AppDefaults {
+    <#
+    .SYNOPSIS
+        Set default apps through DISM
+    .EXAMPLE
+        Install-AppDefaults
+    #>
+
+    Write-Host "Installing App Defaults"
+
+    If (Test-Path 'C:\IT\AppAssociations.xml') {
+        Write-Host "> Importing App Defaults" -ForegroundColor Cyan
+        Dism.exe /online /import-defaultappassociations:'C:\IT\AppAssociations.xml'
+    }
+    Else {
+        Write-Host "> Could not find app associations xml file."
+    }
+}
+
+Function Install-Office365 {
+    <#
+    .SYNOPSIS
+        Installs Office 365 and adds shortcuts to public desktop
+    .PARAMETER SiteCode
+        Used to identify the prefix of a customised XML file.
+        Example: $SiteCode_O365_Config.xml
+    .PARAMETER DataFolder
+        The root folder that has the O365 folder with setup.exe and config files.
+    .EXAMPLE
+        Install-Office365 -SiteCode "ABC" -DataFolder "C:\Data"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $False)]
+        [String] $SiteCode = "Generic",
+
+        [Parameter(Mandatory = $True)]
+        [String] $DataFolder
+    )
+
+    Begin {
+        Write-Host "Starting Office 365 Installation"
+
+        # Installation Variables 
+        $O365Setup = "{0}\O365\setup.exe" -F $DataFolder
+        $O365Xml = "{0}\O365\{1}_O365_Config.xml" -F $DataFolder, $SiteCode
+        $Installed = $False
+
+        # Shortcut Variables 
+        $O365Root64 = "C:\Program Files\Microsoft Office\root\Office16\"
+        $O365Root32 = "C:\Program Files (x86)\Microsoft Office\root\Office16\"
+        $O365Apps = @{ Word = "WINWORD"; Outlook = "OUTLOOK"; Excel = "EXCEL" }
+    }
+
+    Process {
+        Write-Host "Installing Office 365"
+
+        Try {
+            # Install Office 365
+            Start-Process $O365Setup -ArgumentList "/configure $O365Xml" | Wait-Process
+            
+            $Installed = $True
+            Write-Host "> Office 365 Installed" -ForegroundColor Green
+        }
+        Catch {
+            Write-Host "> Error installing Office 365" -ForegroundColor Red
+        }
+
+        If ($Installed) {
+            Write-Host "Placing Shortcuts"
+
+            ForEach ($App in $O365Apps.Keys) {
+                # Set Path variables for O365 root
+                $Path64 = "{0}{1}.exe" -F $O365Root64, $($O365[$App])
+                $Path32 = "{0}{1}.exe" -F $O365Root32, $($O365[$App])
+
+                Try {
+                    # Confirm Office 365 version
+                    If (Test-Path $Path64) {
+                        $TargetFile = $Path64
+                    }
+                    ElseIf (Test-Path $Path32) {
+                        $TargetFile = $Path32
+                    }
+
+                    # Create the shortcut on public desktop
+                    $ShortcutFile = "$env:Public\Desktop\{0}.lnk" -F $App
+                    $WScriptShell = New-Object -ComObject WScript.Shell
+                    $Shortcut = $WScriptShell.CreateShortcut($ShortcutFile)
+                    $Shortcut.TargetPath = $TargetFile
+                    $Shortcut.Save()
+
+                    Write-Host "> Added $App shortcut" -ForegroundColor Green
+                }
+                Catch {
+                    Write-Host "> Could not place shortcuts" -ForegroundColor Red
+                }
+            }
+        }
+        Else {
+            Write-Host "> Could not place shortcuts" -ForegroundColor Red
+        }
+    }
+}
+
+Function Install-SiteApps {
+    <#
+    .SYNOPSIS
+        Installs Applications from a CSV File.
+    .PARAMETER CSVPath
+        The path to the CSV File.
+    .PARAMETER SiteCode
+        The site code to install specific software for.
+    .PARAMETER InstallOther
+        Install specific software over others as identified in the CSV.
+    .EXAMPLE
+        Install-SiteApps -CSVPath "C:\Data\file.csv"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $CSVPath,
+
+        [Parameter(Mandatory = $True)]
+        [String] $SiteCode,
+
+        [Parameter(Mandatory = $True)]
+        [Switch] $InstallOther
+    )
+
+    Begin {
+        Write-Host "Installing Site Apps"
+        Write-Host "> Importing CSV Data"
+
+        $Apps = Import-Csv -Path $CSVPath
+    }
+
+    Process {
+        
+    }
+}
+
+Install-WinGet {
+    <#
+    .SYNOPSIS
+        Installs Microsoft App Installer if not already available.
+    .EXAMPLE
+        Install-WinGet
+    #>
+
+    Begin {
+        Write-Host "Installing Microsoft App Installer"
+    }
+
+    Process {
+        Try {
+            # Check if WinGet already installed
+            If (-not (Get-AppxPackage *DesktopAppInstaller*)) {
+                # Install WinGet
+                Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
+                Write-Host "> Installed Microsoft App Installer" -ForegroundColor Green
+            }
+            Else {
+                Write-Host "> Microsoft App Installer already installed" -ForegroundColor Yellow
+            }
+        }
+        Catch {
+            Write-Host "> Error installing Micrsoft App Installer" -ForegroundColor Red
+        }
+    }
+}
+
+Function Join-Domain {
+    <#
+	.SYNOPSIS
+        Joins the specified domain with the specified credentials.
+	.PARAMETER Domain
+		The domain to join the computer to.
+    .PARAMETER Username
+        Username of account with permission to join computers to domains.
+    .PARAMETER Password
+        The account password.
+	.EXAMPLE
+		Join-Domain -Domain "Example.local" -Username "Administrator" -Password "Password1234"
+	#>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $Domain,
+
+        [Parameter(Mandatory = $True)]
+        [String] $Username,
+
+        [Parameter(Mandatory = $True)]
+        [String] $Password
+    )
+
+    Begin {
+        Write-Host "Join Domain"
+        $Password = $Password | ConvertTo-SecureString -AsPlainText -Force
+        $Username = $Domain + "\" + $Username
+        $credential = New-Object System.Management.Automation.PSCredential($Username, $Password)
+    }
+
+    Process {
+        Try {
+            Add-Computer -DomainName $Domain -Credential $credential
+            Write-Host "Successfully joined the $Domain domain." -ForegroundColor Green
+        }
+        Catch {
+            Write-Host "Unable to join the $Domain domain." -ForegroundColor Red
+        }
+    }
+}
+Function Remove-PathForcefully {
+    <#
+	.SYNOPSIS
+		Deletes all files and folders given immediately if they are not locked.
+		If locked files are found, queues them up to be deleted upon next reboot.
+		Recurse is assumed.
+    .LINK
+        https://blogs.technet.com/b/heyscriptingguy/archive/2013/10/19/weekend-scripter-use-powershell-and-pinvoke-to-remove-stubborn-files.aspx
+        http://www.leeholmes.com/blog/2009/02/17/moving-and-deleting-really-locked-files-in-powershell/
+        https://blogs.technet.com/b/heyscriptingguy/archive/2013/06/25/use-powershell-to-interact-with-the-windows-api-part-1.aspx
+	.PARAMETER Path
+		The file system path of the folder or file to be deleted.
+	.EXAMPLE
+		Remove-PathForcefully -Path "C:\Temp" # Deletes the folder C:\Temp and all files or folders within, queuing up any locked files for deletion on next reboot.
+	#>
+    
+    Param (
+        [parameter(Mandatory = $true)]
+        [string] $Path
+    )
+
+    Add-Type -ErrorAction Ignore @'
+		using System;
+		using System.Text;
+		using System.Runtime.InteropServices;
+
+		public class Posh
+		{
+			public enum MoveFileFlags
+			{
+				MOVEFILE_DELAY_UNTIL_REBOOT = 0x00000004
+			}
+
+			[DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+			static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, MoveFileFlags dwFlags);
+
+			public static bool MarkFileDelete (string sourcefile)
+			{
+				return MoveFileEx(sourcefile, null, MoveFileFlags.MOVEFILE_DELAY_UNTIL_REBOOT);
+			}
+		}
+'@
+    Function Remove-SubPath {
+        param(
+            [parameter(Mandatory = $true)]
+            [string] $SubPath
+        )
+
+
+        $SubPath = (Resolve-Path $SubPath -ErrorAction Stop).Path
+        try {
+            Remove-Item $SubPath -Force -Recurse -ErrorAction Stop
+            Write-Host -ForegroundColor Green -BackgroundColor Black "Deletion of $SubPath succeeded."
+        }
+        catch {
+            $deleteResult = [Posh]::MarkFileDelete($SubPath)
+            if ($deleteResult -eq $false) {
+                throw (New-Object ComponentModel.Win32Exception) # calls GetLastError
+            }
+            else {
+                Write-Host -ForegroundColor Red -BackgroundColor Yellow "Deletion of ||$SubPath|| failed. Deleting at next boot."#`n$($_.Exception.Message)"
+            }
+        }
+    }
+    If (Test-Path -Path $Path -Verbose) {
+        $SubFiles = Get-ChildItem -Path $Path -Recurse -Force -File
+        $SubFolders = Get-ChildItem -Path $Path -Recurse -Force -Directory
+        If ($SubFiles -or $SubFolders) {
+            $SubFiles | ForEach-Object { Remove-SubPath -SubPath $_.FullName }
+            $SubFolders | ForEach-Object { Remove-SubPath -SubPath $_.FullName }
+            Remove-SubPath -SubPath $Path
+        }
+        Else {
+            Remove-SubPath -SubPath $Path
+        }
+    }
+    Else {
+        Write-Warning "$Path was not found."
+    }
+}
+Function Set-RunOnceScript {
+    <#
+	.SYNOPSIS
+        Sets a script to run on next reboot.
+    .PARAMETER Label
+        Name the registry key
+    .PARAMETER Script
+        The path to the script to run.
+	.EXAMPLE
+		Set-RunOnceScript -Label "Pass2" -Script "C:\IT\Script2.ps1"
+	#>
+    
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String]$Label,
+
+        [Parameter(Mandatory = $True)]
+        [String]$Script
+    )
+
+    Begin {
+        Write-Host "Setting run-once script."
+        $RunOnceValue = 'PowerShell.exe -ExecutionPolicy Bypass -File "' + $Script + '"'
+    }
+
+    Process {
+        Set-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name $Label -Value $RunOnceValue
+        Write-Host "Run-once script set"
+    }
+}
+
+Function Set-AutoLogon {
+    <#
+	.SYNOPSIS
+        Sets an admin account to autologon after the next reboot.
+    .PARAMETER DefaultUsername
+        The temporary local admin username
+    .PARAMETER DefaultPassword
+        The temporary local admin password
+	.EXAMPLE
+		Set-AutoLogon -DefaultUsername "TempUser" -DefaultPassword "TempPass"
+	#>
+
+    Param (
+        [Parameter(Mandatory = $False)]
+        [String] $DefaultUsername,
+
+        [Parameter(Mandatory = $False)]
+        [String] $DefaultPassword
+    )
+    
+    Begin {
+        Write-Host "Set autologon"
+        #Registry path declaration
+        $RegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+    }
+
+    Process {
+        #setting registry values
+        Set-ItemProperty $RegPath "AutoAdminLogon" -Value "1" -type String
+        Set-ItemProperty $RegPath "DefaultUsername" -Value $DefaultUsername -type String
+        Set-ItemProperty $RegPath "DefaultPassword" -Value $DefaultPassword -type String
+        Set-ItemProperty $RegPath "AutoLogonCount" -Value "1" -type DWord
+
+        Write-Host "End of Set autologon"
+    }
+}
+
+Function Set-DailyReboot {
+    <#
+	.SYNOPSIS
+		Creates a scheduled task to restart the computer daily at 3am, if no one is using the computer.
+		Helpful for maintaining updated and stability.
+    .EXAMPLE
+        Set-DailyReboot
+     #>
+
+    Begin {
+        Write-Host "Schedule Daily Restart"
+        $Action = New-ScheduledTaskAction -Execute 'shutdown.exe' -Argument '-f -r -t 0'
+        $Trigger = New-ScheduledTaskTrigger -Daily -At 3am
+        $Idle = New-ScheduledTaskSettingsSet -RunOnlyIfIdle -IdleDuration 00:30:00 -IdleWaitTimeout 02:00:00
+        $User = "NT AUTHORITY\SYSTEM"
+    }
+
+    Process {
+        Register-ScheduledTask -Action $action -Trigger $trigger -User $User -Settings $Idle -TaskName "Daily Restart" -Description "Daily restart" -Force | Out-Null
+        $NewDate = (Get-ScheduledTask -TaskName "Daily Restart").Triggers.StartBoundary.subString(0, 16)
+        Write-Host "The next scheduled 'Daily Restart' task will happen at $([Datetime]::ParseExact($NewDate, 'yyyy-MM-ddTHH:mm', $null))"
+    }
+}
+
+Function Set-GMTTime {
+    <#
+	.SYNOPSIS
+		Sets the system timezone to GMT
+    .EXAMPLE
+        Set-GMTTime
+     #>
+    
+    Process {
+        Write-Host "Setting timezone to GMT"
+        Set-TimeZone -Name "GMT Standard Time"
+    }
+
+    End {
+        net start W32Time
+        W32tm /resync /force
+    }
+}
+
+Function Set-NumLock {
+    <#
+	.SYNOPSIS
+		Sets numlock to on by default
+    .EXAMPLE
+        Set-NumLock
+     #>
+
+    Process {
+        Write-Host "Setting Numlock as default"
+        Set-ItemProperty -Path 'Registry::HKU\.DEFAULT\Control Panel\Keyboard' -Name "InitialKeyboardIndicators" -Value "2" -Force -PassThru
+    }
+}
+Function Start-Win10Decrapify {
+    <#
+    .SYNOPSIS
+        Runs Windows 10 Decrapifier by CSAND.
+        Version in Sentinel-Functions GitHub is modified to set a few switches to true.
+    .LINK
+        https://community.spiceworks.com/scripts/show/4378-windows-10-decrapifier-18xx-19xx-2xxx
+    .PARAMETER ScriptURL
+        URL to raw script file.
+    .EXAMPLE
+        Start-Win10Decrapify -ScriptURL "https://example.com/script"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $ScriptURL
+    )
+
+    Begin {
+        Write-Host "Starting Windows 10 Decrapifier"
+
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        Enable-SSL
+    }
+
+    Process { Invoke-WebRequest $ScriptURL -UseBasicParsing | Invoke-Expression }
+}
+
+Function Start-PPKGLog {
+    <#
+	.SYNOPSIS
+        Starts a transcript with a specific name.
+    .PARAMETER LogLabel
+        A short string for the log title
+    .PARAMETER SiteCode
+        The unique code for the site.
+	.EXAMPLE
+		Start-PPKGLog -LogLabel "Pass1" -SiteCode "ABC"
+	#>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $LogLabel,
+
+        [Parameter(Mandatory = $False)]
+        [String] $SiteCode
+    )
+    Write-Host "Creating Log File"
+    $LogPath = "C:\IT\" + $SiteCode + "-" + $LogLabel + ".log"
+    Start-Transcript -Path $LogPath -Force -Append
+}
+Function Update-DellPackages {
+    <#
+	.SYNOPSIS
+		Uses the CLI version of Dell Command | Update to install any missing drivers/firmwares/Bios and update existing ones.
+		There are no parameters to use.
+	.LINK
+		https://www.dell.com/support/kbdoc/en-us/000177325/dell-command-update
+	.EXAMPLE
+		Update-DellPackages
+	#>
+
+    Function Install-DCU {
+        #Install the latest version
+        Stop-Process -Name DellCommandUpdate -Force -ErrorAction SilentlyContinue
+        winget install Dell.CommandUpdate.Universal --force --accept-source-agreements --accept-package-agreements
+    }
+
+    Write-Host "Dell Updates"
+    $Manufacturer = (Get-CimInstance -Class Win32_ComputerSystem).Manufacturer
+    If ( $Manufacturer -like "*Dell*") {
+        If (Get-Command winget) {
+            Write-Host "Updating App Installer"
+            winget upgrade "App Installer" --accept-source-agreements --accept-package-agreements
+        }
+        Else {
+            Install-WinGet
+        }
+
+        Write-Host "Checking if 'Dell Command Update' is current."
+
+        #Remove any Windows 10 "Apps"
+        Get-ProvisionedAppPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*Dell*Update*" } | Remove-ProvisionedAppPackage -Online
+        Get-AppxPackage "*Dell*Update*" -ErrorAction SilentlyContinue | Remove-AppxPackage
+        Get-Package "Dell*Windows 10" -ErrorAction SilentlyContinue | Uninstall-Package -AllVersions -Force
+    
+        If (Get-AppxPackage *Dell*Update*) {
+            $apps = Get-ChildItem -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall, HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall | Get-ItemProperty | Where-Object { $_.DisplayName -like "Dell*Update*" } | Select-Object -Property DisplayName, UninstallString
+            ForEach ($ver in $apps) {
+                If ($ver.UninstallString) {
+                    $uninst = $ver.UninstallString
+                    Write-Host Uninstalling: $ver.DisplayName
+                    Start-Process cmd -ArgumentList "/c $uninst /quiet /norestart" -NoNewWindow -Wait -PassThru
+                }
+            }
+        }
+
+        #Compare version numbers of any remaining installed version.
+        $DCUInstalledVersion = (Get-Package -Provider Programs -IncludeWindowsInstaller -Name "Dell Command | Update" -ErrorAction SilentlyContinue).Version
+        $DCUAvailableVersion = winget show Dell.CommandUpdate.Universal #Gets all results
+        $DCUAvailableVersion = ($DCUAvailableVersion | Select-String -Pattern "Version: " -SimpleMatch).Line
+        $DCUAvailableVersion = $DCUAvailableVersion.split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)[1]
+
+        If (-not $DCUInstalledVersion) {
+            Write-Host "'Dell Command Update' is not installed, installing now."
+            Install-DCU
+        }
+        ElseIf ($DCUInstalledVersion -ne $DCUAvailableVersion) {
+            Write-Host "'Dell Command Update' is not current. Updating from version $DCUInstalledVersion to $DCUAvailableVersion."
+
+            #Remove any programs listed through "Add and remove programs"
+            $DCUInstalled = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*Dell*Update*" }
+            If ($DCUInstalled) {
+                $DCUInstalled.Uninstall()
+            }
+            Install-DCU
+        }
+        ElseIf ($DCUInstalledVersion -eq $DCUAvailableVersion) {
+            Write-Host "'Dell Command Update' is current."
+        }
+
+        Dell.CommandUpdate.Universal
+        #Configure and run Dell Command Update
+        Stop-Process -Name DellCommandUpdate -Force -ErrorAction SilentlyContinue
+
+        $DCUx86 = Join-Path -Path ${env:ProgramFiles(x86)} -ChildPath "Dell\CommandUpdate\dcu-cli.exe"
+        $DCUx64 = Join-Path -Path $Env:ProgramFiles -ChildPath "Dell\CommandUpdate\dcu-cli.exe"
+
+        If (Test-Path $DCUx86) {
+            & $DCUx86 /configure -silent -autoSuspendBitLocker=enable -userConsent=disable -scheduleManual 
+            & $DCUx86 /applyUpdates -reboot=disable
+        }
+        ElseIf (Test-Path $DCUx64) {
+            & $DCUx64 /configure -silent -autoSuspendBitLocker=enable -userConsent=disable -scheduleManual 
+            & $DCUx64 /applyUpdates -reboot=disable
+        }
+        Else { Write-Error "Dell Command Update CLI not found." }
+
+    }
+    Else { Write-Host "This is not a Dell Computer" }
+    Write-Host "`n> End of Dell Updates"
+}
+
+Function Update-Windows {
+    <#
+	.SYNOPSIS
+        Function to update windows.
+    .LINK
+        https://raw.githubusercontent.com/AmbitionsTechnologyGroup/ATG-PS-Functions/master/Scripts/Windows-Update/UpdateWindows.txt
+    .PARAMETER NoSofware
+        Set whether to exclude software during windows update. 
+        Set to false to exclude software.
+    .PARAMETER NoDrivers
+        Set whether to exclude drivers during windows update. 
+        Set to false to exclude drivers.
+	.EXAMPLE
+		Update-Windows -NoDrivers $False
+	#>
+
+    Param (
+        [Parameter(Mandatory = $False)]
+        [Switch] $NoSofware,
+		
+        [Parameter(Mandatory = $False)]
+        [Switch] $NoDrivers
+    )
+
+    Begin {
+        Write-Host "Windows Updates"
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        $WUService = Get-Service wuauserv
+
+        # Start Windows Update service if stopped
+        if (!($WUService.Status -eq "Stopped")) {
+            Write-Host "Starting the Windows update Service | Waiting for 10 seconds..."
+            Start-Service wuauserv
+            Start-Sleep -Seconds 10
+        }
+    }
+
+    Process {
+        Write-Host "Installing Windows Updates"
+
+        Function RegisterWindowsUpdates {
+            Write-Host "Checking Microsoft Update Service"
+            If ((Get-WUServiceManager).Name -like "Microsoft Update") {
+                Write-Host "Microsoft Update Service found, it's good to go."
+            }
+            else {
+                Write-Host "Microsoft Update Service not found, registering it."
+                Add-WUServiceManager -ServiceID 7971f918-a847-4430-9279-4a52d1efe18d -Confirm:$false
+            }
+        }
+
+        Write-Host "Checking WinGet Installation"
+        # Check if WinGet already installed
+        If (-not (Get-AppxPackage *DesktopAppInstaller*)) {
+            # Install WinGet
+            Write-Host "WinGet is not installed. Installing WinGet."
+            Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
+            Write-Host "Installed Microsoft App Installer" -ForegroundColor Green
+        }
+
+        Write-Host "Checking PowerShell version."
+        If ($PSVersionTable.PSVersion.Major -lt "5") {
+            Write-Host "Powershell needs an update, installing now"
+            winget install --id Microsoft.Powershell --source winget --accept-source-agreements --accept-package-agreements
+            Write-Host "Reboot computer and run script again"
+        }
+        Else {
+            If ((Get-Command Get-WUInstall -ErrorAction SilentlyContinue) -And ((Get-Command Get-WUInstall -ErrorAction SilentlyContinue).Version.Major -lt "2")) {
+                $Module = Get-Module -Name PSWindowsUpdate
+                Write-Host "Removing an out of date PSWindowsUpdate"
+                Uninstall-Module $Module.Name
+                Remove-Module $Module.Name
+                Remove-Item $Module.ModuleBase -Recurse -Force
+            }
+
+            If (-Not (((Get-Command Get-WUInstall -ErrorAction SilentlyContinue).Version.Major -ge "2") -and ((Get-Command Get-WUInstall -ErrorAction SilentlyContinue).Version.Minor -ge "1"))) {
+                Write-Host "Attempting automatic installation of PSWUI 2.2.0.2"
+                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.208 -Force -ErrorAction SilentlyContinue
+                Install-Module -Name PSWindowsUpdate -MinimumVersion 2.2.0.2 -Force -ErrorAction SilentlyContinue
+                RegisterWindowsUpdates
+                If (-Not (((Get-Command Get-WUInstall -ErrorAction SilentlyContinue).Version.Major -ge "2") -and ((Get-Command Get-WUInstall -ErrorAction SilentlyContinue).Version.Minor -ge "1"))) {
+                    Write-Host "Auto install Failed, Attempting Manual installation of PSWUI 2.2.0.2"
+                    New-Item -ItemType Directory -Force -Path 'C:\IT' -ErrorAction Stop
+			        (New-Object System.Net.WebClient).DownloadFile('https://psg-prod-eastus.azureedge.net/packages/pswindowsupdate.2.2.0.2.nupkg', 'C:\IT\pswindowsupdate.2.2.0.2.zip')
+                    New-Item -ItemType Directory -Force -Path 'C:\Windows\System32\WindowsPowerShell\v1.0\Modules\PSWindowsUpdate\2.2.0.2' -ErrorAction Stop
+                    Expand-Archive -LiteralPath 'C:\IT\pswindowsupdate.2.2.0.2.zip' -DestinationPath 'C:\Windows\System32\WindowsPowerShell\v1.0\Modules\PSWindowsUpdate\2.2.0.2' -ErrorAction Stop
+                    Import-Module PSWindowsUpdate -ErrorAction Stop
+                    RegisterWindowsUpdates
+                }
+            }
+
+            If (((Get-Command Get-WUInstall -ErrorAction SilentlyContinue).Version.Major -ge "2") -and ((Get-Command Get-WUInstall -ErrorAction SilentlyContinue).Version.Minor -ge "1")) {
+                Write-Host "PSWindowsUpdate is installed"
+                If ($NoDrivers -ne $True) {
+                    Write-Host "Checking for DRIVER Updates..."
+                    Get-WUInstall -MicrosoftUpdate -AcceptAll -Install -UpdateType Driver -IgnoreReboot -ErrorAction SilentlyContinue -Verbose
+                }
+                If ($NoSoftware -ne $True) {
+                    Write-Host "Checking for SOFTWARE Updates..."
+                    Get-WUInstall -MicrosoftUpdate -AcceptAll -Install -UpdateType Software -IgnoreReboot -ErrorAction SilentlyContinue -Verbose
+                }
+            }
+            Else {
+                Write-Host "PSWindowsUpdate is failing to install, please investigate" -ForegroundColor Red
+            }
+        }
+        Write-Host "End of Install Windows Updates"
+    }
+}
+
+Function Update-WindowsApps {
+    <#
+	.SYNOPSIS
+        Launches Microsoft Store and updates installed apps.
+	.EXAMPLE
+		Update-WindowsApps
+	#>
+
+    Begin {
+        Write-Host "Updating Windows Apps"
+
+        Start-Process ms-windows-store:
+        Start-Sleep -Seconds 5
+    }
+
+    Process {
+	    (Get-WmiObject -Namespace "root\cimv2\mdm\dmmap" -Class "MDM_EnterpriseModernAppManagement_AppManagement01").UpdateScanMethod()
+        
+        Write-Host "Update Windows Apps initiated"
+    }
+
+}
+
+Function Update-WindowTitle {
+    <#
+	.SYNOPSIS
+        Sets the title of the window to a custom string.
+    .PARAMETER PassNumber
+        The script number, first script would be 1.
+    .PARAMETER SiteCode
+        The unique code for the site.
+	.EXAMPLE
+		Update-WindowTitle -PassNumber "1" -SiteCode "ABC"
+	#>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $PassNumber,
+
+        [Parameter(Mandatory = $False)]
+        [String] $SiteCode
+    )
+
+    Write-Host "Changing window title"
+    $host.ui.RawUI.WindowTitle = "$SiteCode Provisioning | $env:computername | Pass $PassNumber | Please Wait"
+}
+
+Function Update-O365Apps {
+    <#
+	.SYNOPSIS
+        Updates Office 365 applcations.
+    .LINK
+        https://github.com/AmbitionsTechnologyGroup/ATG-PS-Functions/blob/master/Functions/ATG-PS-Update.txt
+	.EXAMPLE
+		Update-O365Apps
+	#>
+
+    Begin {
+        $global:O365CurrentCdn = ""
+    }
+
+    Process {
+        Function Get-Office365Version {
+            $O365CurrentVer = ""
+            $O365CurrentCdn = ""
+            $O365CurrentPol = ""
+            $O365CurrentVer = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration" -ErrorAction SilentlyContinue).VersionToReport
+            $O365CurrentCdn = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration" -ErrorAction SilentlyContinue).CDNBaseUrl
+            $O365CurrentPol = (Get-ItemProperty -Path "HKLM:\SOFTWARE\policies\microsoft\office\16.0\common\officeupdate" -ErrorAction SilentlyContinue).updatebranch
+            if ($O365CurrentVer.Length -eq 0) {
+                Write-Host "Office 365 (C2R) is not installed on this PC."
+            }
+            else {
+                Write-Host "Office 365 (C2R) Current Version: "$O365CurrentVer
+                switch ($O365CurrentCdn) {
+                    "http://officecdn.microsoft.com/pr/492350f6-3a01-4f97-b9c0-c7c6ddf67d60" { $O365CurrentCdn = "Monthly Channel" }
+                    "http://officecdn.microsoft.com/pr/7ffbc6bf-bc32-4f92-8982-f9dd17fd3114" { $O365CurrentCdn = "Semi-Annual Channel" }
+                    "http://officecdn.microsoft.com/pr/b8f9b850-328d-4355-9145-c59439a0c4cf" { $O365CurrentCdn = "Semi-Annual Channel (Targeted)" }
+                }
+                Write-Host "Office 365 Update Channel (Local Setting): "$O365CurrentCdn
+                if ($O365CurrentPol.length -eq 0) {
+                    $O365CurrentPol = "None"
+                }
+                else {
+                    switch ($O365CurrentPol) {
+                        "Current" { $O365CurrentPol = "Monthly Channel" }
+                        "Deferred" { $O365CurrentPol = "Semi-Annual Channel" }
+                        "FirstReleaseDeferred" { $O365CurrentPol = "Semi-Annual Channel (Targeted)l" }
+                    }
+                }
+                Write-Host "Office 365 Update Channel (Policy Setting): "$O365CurrentPol
+                Write-Host "`n"
+            }
+        }
+
+        Function Wait-UpdateStop {
+                
+            Param (
+                [Parameter(Mandatory = $False)]
+                [string]$Process
+            )
+
+            Function Get-SpecificProcess {
+                Get-Process OfficeClickToRun -ErrorAction SilentlyContinue | Where-Object -Property Path -Like "*Microsoft Shared\ClickToRun\Updates\*"
+            }
+
+            $Timeout = 190 ## seconds
+            Try {
+                $timer = [Diagnostics.Stopwatch]::StartNew()
+                while (($timer.Elapsed.TotalSeconds -lt $Timeout) -and (-not (Get-SpecificProcess))) {
+                    Start-Sleep -Seconds 2
+                    $totalSecs = [math]::Round($timer.Elapsed.TotalSeconds, 0)
+                    Write-Verbose -Message "Still waiting for action to complete after [$totalSecs] seconds..."
+                }
+                $timer.Stop()
+                if ($timer.Elapsed.TotalSeconds -gt $Timeout) {
+                    Write-Host "Office update either failed or is already up to date"
+                }
+                else {
+                    Do {
+                        If (!(Get-SpecificProcess)) {
+                            Write-Host "Waiting for $Process to Start"
+                            Start-Sleep -Seconds 2
+                        }
+                        Else {
+                            Write-Host "$Process has Started"
+                            While (Get-SpecificProcess) {
+                                [String]$CPU = (Get-SpecificProcess).CPU
+                                If ($CPU.Length -gt 4) { $CPU = $CPU.substring(0, 4) }
+                                Write-Host -NoNewline "`rWaiting for $Process to stop. CPU time = $CPU"
+                                Start-Sleep -Seconds 5
+                            }
+                            Write-Host "`n`n$Process Stopped" ; $Status = 'Done'
+                        }
+                    } Until ($Status)
+                }
+            }
+            Catch {
+                Write-Error -Message $_.Exception.Message
+            }
+        }
+
+        If (-not (Test-Path 'C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe')) {
+            Write-Host "Office 365 Click2Run is not installed. This script does not apply."
+        }
+        Else {
+            $Apps = @('Excel', 'Outlook', 'WinWord', 'PowerPoint', 'MsAccess', 'MSPub', 'OneNote')
+            $OpenApps = @('')
+            $Apps | ForEach-Object {
+                If (Get-Process $_ -ErrorAction SilentlyContinue) {
+                    $OpenApps = $OpenApps += $_
+                }
+            }
+
+            If ($OpenApps) {
+                Write-Host "Aborting update, the following Office Apps are open:"
+                $OpenApps | Format-List | Out-String
+                Write-Host "Please close these programs and try again."
+            }
+            Else {
+                Get-Office365Version
+
+                If (!($O365CurrentCdn -like "*monthlty*")) {
+                    Write-Host "Setting update channel to monthly"
+                    & "C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe" /changesetting Channel=Current
+                }
+
+                Write-Host "Updating Office, please wait 120 seconds to see further progress."
+                & "C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe" /update user updatepromptuser=false forceappshutdown=true displaylevel=false
+                Restart-Service -Name "ClickToRunSvc" -Force -ErrorAction SilentlyContinue
+                Wait-UpdateStop OfficeClickToRun
+
+                Write-Host "`n"
+
+                Get-Office365Version
+            }
+        }
+    }
+    
+}
+Function Export-StaffMailboxPermissions {
     <#
   .SYNOPSIS
   Create report of all mailbox permissions
