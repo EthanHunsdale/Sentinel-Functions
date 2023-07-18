@@ -9,11 +9,11 @@ Function Install-AppDefaults {
     Write-Host "Installing App Defaults"
 
     If (Test-Path 'C:\IT\AppAssociations.xml') {
-        Write-Host "> Importing App Defaults" -ForegroundColor Cyan
+        Write-Host "Importing App Defaults from file" -ForegroundColor Cyan
         Dism.exe /online /import-defaultappassociations:'C:\IT\AppAssociations.xml'
     }
     Else {
-        Write-Host "> Could not find app associations xml file."
+        Write-Host "Could not find app associations xml file."
     }
 }
 
@@ -122,50 +122,306 @@ Function Install-SiteApps {
         [String] $CSVPath,
 
         [Parameter(Mandatory = $True)]
-        [String] $SiteCode,
-
-        [Parameter(Mandatory = $True)]
-        [Switch] $InstallOther
+        [String] $SiteCode
     )
 
     Begin {
         Write-Host "Installing Site Apps"
         Write-Host "> Importing CSV Data"
 
-        $Apps = Import-Csv -Path $CSVPath
+        If (Test-Path $CSVPath) {
+            $AppsList = Import-Csv -Path $CSVPath -Delimiter ","
+        }
     }
 
     Process {
-        
+        If ($AppsList) {
+            Write-Host "Installing $SiteCode Applications"
+            ForEach ($App in $AppsList) {
+                If ($App.Install -eq "Y") {
+                    Write-Host "Installing $App.AppName"
+                    If ($App.InstallType -eq "WinGet") {
+                        winget install -e --id $App.Path -h --accept-package-agreements --accept-source-agreements
+                    }
+                    ElseIf ($App.InstallType -eq "File") {
+                        If ($App.Path -match "*.msi") {
+                            If ($App.AdminRights -eq "Y") {
+                                Start-Process msiexec.exe -ArgumentList $App.Arguments -Wait -NoNewWindow -Verb RunAs
+                            }
+                            Else {
+                                Start-Process msiexec.exe -ArgumentList $App.Arguments -Wait -NoNewWindow
+                            }
+                        }
+                        ElseIf ($App.Path -match "*.exe") {
+                            If ($App.AdminRights -eq "Y") {
+                                Start-Process $App.Path -ArgumentList $App.Arguments -Wait -NoNewWindow -Verb RunAs
+                            }
+                            Else {
+                                Start-Process $App.Path -ArgumentList $App.Arguments -Wait -NoNewWindow -Verb RunAs
+                            }
+                        }
+                    }
+                }
+                Write-Host "Skipping Install for $App.AppName"
+            }
+
+            Write-Host "App Installation Complete"
+        }
     }
 }
 
-Install-WinGet {
+Function Install-WinGet {
     <#
-    .SYNOPSIS
-        Installs Microsoft App Installer if not already available.
-    .EXAMPLE
-        Install-WinGet
-    #>
+		.SYNOPSIS
+			Installs winget, Microsoft's answer to apt-get and choco.
+		.LINK
+			https://github.com/microsoft/winget-cli
+		.LINK
+			https://docs.microsoft.com/en-us/windows/package-manager/winget/
+        .LINK
+            https://github.com/AmbitionsTechnologyGroup/ATG-PS-Functions/blob/master/Functions/ATG-PS-Install.txt
+	#>
+	
+    $GetWinGet = {
+        $url = 'https://github.com/microsoft/winget-cli/releases/latest'
+        $request = [System.Net.WebRequest]::Create($url)
+        $response = $request.GetResponse()
+        $realTagUrl = $response.ResponseUri.OriginalString
+        $version = $realTagUrl.split('/')[-1].Trim('v')
+        $fileName = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        $realDownloadUrl = $realTagUrl.Replace('tag', 'download') + '/' + $fileName
 
-    Begin {
-        Write-Host "Installing Microsoft App Installer"
+        Write-Host "Installing the latest version of winget from:`n $realDownloadUrl"
+        $DownloadLocation = $($env:temp)
+
+        Write-Host "Downloading Desktop App Installer"
+        If (-not (Get-Command -Name "Get-FileDownload" -ErrorAction SilentlyContinue)) {
+            Invoke-Expression(Invoke-WebRequest ps.acgs.io -UseBasicParsing)
+        }
+
+        $DownloadFileInfo = Get-FileDownload -URL $realDownloadUrl -SaveToFolder $($env:temp)
+        $DownloadFilePath = $DownloadFileInfo[-1]
+
+        Add-AppxPackage -Path $DownloadFilePath -ForceApplicationShutdown -InstallAllResources -Verbose
+        Remove-Item -Path $DownloadFilePath -Force -ErrorAction SilentlyContinue
     }
+	
+    $GetWinGetDependancies = {
+        Write-Host "Checking Dependancies"
 
-    Process {
-        Try {
-            # Check if WinGet already installed
-            If (-not (Get-AppxPackage *DesktopAppInstaller*)) {
-                # Install WinGet
-                Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
-                Write-Host "> Installed Microsoft App Installer" -ForegroundColor Green
+        $Installed_X86_VCLibs = Get-AppxPackage | Where-Object { $_.Name -Match "Microsoft.VCLibs.140.00.UWPDesktop" -and $_.Architecture -Match "X86" }
+        If (-not ($Installed_X86_VCLibs)) {
+            $DownloadURL = 'https://aka.ms/Microsoft.VCLibs.x86.14.00.Desktop.appx'
+            $DownloadLocation = "$env:TEMP\"
+            $LocalFilePath = Join-Path -Path $DownloadLocation -ChildPath "Microsoft.VCLibs.x86.14.00.Desktop.appx"
+				
+            If (Test-Path $LocalFilePath) {
+                Remove-Item -Path $LocalFilePath -Force -ErrorAction SilentlyContinue
+            }
+				
+            Write-Host "Downloading $DownloadURL"
+            $progressPreference = 'silentlyContinue'
+            Invoke-WebRequest -Uri $DownloadURL -OutFile $LocalFilePath
+				
+            If ($PSVersionTable.PSEdition -eq "Core") {
+                Import-module "Appx" -UseWindowsPowerShell
+            }
+            Write-Host "Installing $LocalFilePath"
+            Add-AppxPackage -Path $LocalFilePath -ForceApplicationShutdown -InstallAllResources -Verbose
+            Remove-Item -Path $LocalFilePath -Force -ErrorAction SilentlyContinue
+        }
+        ## x64 version
+        If ([Environment]::Is64BitOperatingSystem) {
+            $Installed_X64_VCLibs = Get-AppxPackage | Where-Object { $_.Name -Match "Microsoft.VCLibs.140.00.UWPDesktop" -and $_.Architecture -Match "X64" }
+				
+            If (-not ($Installed_X64_VCLibs)) {
+                $DownloadURL = 'https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx'
+                $DownloadLocation = "$env:TEMP\"
+                $LocalFilePath = Join-Path -Path $DownloadLocation -ChildPath "Microsoft.VCLibs.x64.14.00.Desktop.appx"
+
+                If (Test-Path $LocalFilePath) {
+                    Remove-Item -Path $LocalFilePath -Force -ErrorAction SilentlyContinue
+                }
+
+                Write-Host "Downloading $DownloadURL"
+                $progressPreference = 'silentlyContinue'
+                Invoke-WebRequest -Uri $DownloadURL -OutFile $LocalFilePath
+                If ($PSVersionTable.PSEdition -eq "Core") { Import-module "Appx" -UseWindowsPowerShell }
+                Write-Host "Installing $LocalFilePath"
+                Add-AppxPackage -Path $LocalFilePath -ForceApplicationShutdown -InstallAllResources -Verbose
+                Remove-Item -Path $LocalFilePath -Force -ErrorAction SilentlyContinue
+            }
+        }
+        #Microsoft.UI.Xaml
+        Find-PackageProvider -Name NuGet | Install-PackageProvider -Force
+        Register-PackageSource -Name nuget.org -Location https://www.nuget.org/api/v2 -ProviderName NuGet
+        Install-Package -Name 'Microsoft.UI.Xaml' -ProviderName Nuget -Force
+    }
+	
+    If ($(whoami) -eq "nt authority\system") {
+        Write-Error "Due to the AppX nature of Winget, you cannot run this as the system user"
+    } 
+    ElseIf (!(Get-process -Name Explorer -IncludeUserName | Where-Object -Property UserName -EQ $(whoami))) {
+        Write-Error "Due to the AppX nature of Winget, you cannot install WinGet when running the command as a user that is not logged in"
+    } 
+    Else {
+        # Install WinGet
+        If (Get-Command winget -ErrorAction SilentlyContinue) {
+            Write-Host "WinGet is already installed."
+            $WGVersion = winget -v
+            $url = 'https://github.com/microsoft/winget-cli/releases/latest'
+            $request = [System.Net.WebRequest]::Create($url)
+            $response = $request.GetResponse()
+            $realTagUrl = $response.ResponseUri.OriginalString
+            $WGLatestLink = $realTagUrl.split('/')[-1].Trim('v')
+			
+            If ($WGVersion -match $WGLatestLink) {
+                Write-Host "The installed version $WGVersion is up to date."
             }
             Else {
-                Write-Host "> Microsoft App Installer already installed" -ForegroundColor Yellow
+                Write-Host "The installed version $WGVersion is out of date."
+                If ($PSVersionTable.PSEdition -eq "Core") {
+                    Powershell.exe -NonInteractive -Command '$GetWinGetDependancies;$GetWinGet' 
+                } 
+                Else { 
+                    $GetWinGetDependancies | Invoke-Expression ; $GetWinGet | Invoke-Expression 
+                }
+
+                $WGVersion2 = winget -v
+
+                If ($WGVersion -notmatch $WGVersion2) {
+                    Write-Host "Winget $WGVersion2 installed successfully"
+                }
+                Else {
+                    Write-Error "Winget did not install successfully"
+                }
             }
         }
-        Catch {
-            Write-Host "> Error installing Micrsoft App Installer" -ForegroundColor Red
+        Else {
+            Write-Host "WinGet is not installed."
+            If ($PSVersionTable.PSEdition -eq "Core") { 
+                Powershell.exe -NonInteractive -Command $GetWinGetDependancies 
+            } 
+            Else {
+                $GetWinGetDependancies | Invoke-Expression 
+            }
+
+            If ($PSVersionTable.PSEdition -eq "Core") { 
+                Powershell.exe -NonInteractive -Command $GetWinGet 
+            } 
+            Else { 
+                $GetWinGet | Invoke-Expression 
+            }
+
+            If (Get-Command winget -ErrorAction SilentlyContinue) {
+                $WGVersion = winget -v
+                Write-Host "Winget $WGVersion installed successfully"
+            }
+            Else {
+                Write-Error "Winget did not install successfully"
+            }
         }
     }
+}
+
+Function Install-ALB {
+    <#
+    .SYNOPSIS
+        Installs ALB Practice Management Software
+    .PARAMETER SoftwareDir
+        The local directory containing the install files.
+    .PARAMETER AppDir
+        The UNC path of the ALB server installation.
+    .EXAMPLE
+        Install-ALB -AppDir "\\Server\Folder\"
+    #>
+
+    Param (
+        [Parameter(Mandatory = $True)]
+        [String] $Global:SoftwareDir,
+
+        [Parameter(Mandatory = $True)]
+        [String] $Global:AppDir
+    )
+
+    Function Install-ALBPreReqs {
+        Write-Host "Installing SQL Pre-Requisites"
+
+        Write-Host "Installing WinGet"
+        Install-WinGet
+
+        $PreReqApps = @("SQLCLRTypes", "SQLManObj", "SAPCrystalReports")
+
+        ForEach ($App in $PreReqApps) {
+            Write-Host "Installing $App"
+
+            $Arguments = @(
+                "/i",
+                "$SoftwareDir\$App.msi",
+                "/qn"
+            )
+
+            Start-Process "msInvoke-Expressionec.exe" -ArgumentList $Arguments -Wait -NoNewWindow
+            Write-Host "Installed $App"
+        }
+
+        Write-Host "SQL Pre-Requisites Installed"
+
+        #Check and Install .NET
+        Write-Host "Installing .NET Core Runtime 3.1"
+        winget install -e --id Microsoft.DotNet.Runtime.3_1 -h --accept-package-agreements --accept-source-agreements
+
+        Write-Host "Installing .NET Framework 3.5"
+        If (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v3.5")) {
+            $USBPath = Get-USBPath -DriveName "ESD-USB"
+            $ArgumentList = "DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /LimitAccess /Source:{0}sources\sxs" -F $USBPath
+            Start-Process -FilePath powershell.exe -ArgumentList { $ArgumentList } -verb RunAs -Wait
+        }
+
+        Write-Host "Installing .NET Framework 4.7.2"
+        if (-not ((Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full").Release -ge 461808)) {
+            winget install -e --id Microsoft.DotNet.Framework.DeveloperPack_4 -v 4.7.2 -h --accept-package-agreements --accept-source-agreements
+        }
+
+        Write-Host "Installing .NET Framework 4.8"
+        if (-not ((Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full").Release -ge 528040)) {
+            winget install -e --id Microsoft.DotNet.Framework.DeveloperPack_4 -h --accept-package-agreements --accept-source-agreements
+        }
+
+        Write-Host ".NET Pre-Requisites Installed"
+    }
+
+    Function Install-ALBFull {
+        $ALBMSIArguments = @(
+            "/i",
+            "C:\IT\ALB\ALB_Client.msi",
+            "TRANSFORMS=C:\IT\ALB\ALB_Client.mst",
+            $AppDir,
+            "/qn"
+        )
+
+        Write-Host "Installing ALB"
+        Start-Process "msInvoke-Expressionec.exe" -ArgumentList $ALBMSIArguments -Wait -NoNewWindow
+    }
+
+    Function Set-NetShareRule {
+        Write-Host "Enabling network discovery and file sharing"
+        netsh advfirewall firewall set rule group=”network discovery” new enable=yes
+        netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes
+    }
+
+    Function Set-FolderPermissions {
+        Write-Host "Setting Folder Access Rules"
+        $acl = Get-Acl "C:\Program Files (x86)\Advanced Legal"
+        $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("Users", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+        $acl.SetAccessRule($accessRule)
+        $acl | Set-Acl "C:\Program Files (x86)\Advanced Legal"
+    }
+
+    Install-ALBPreReqs
+    Install-ALBFull
+    Set-NetShareRule
+    Set-FolderPermissions
+
+    Start-Process "C:\Program Files (x86)\Advanced Legal\ALB\PMS\IRIS.Law.PmsExe.exe" -Verb RunAs
 }
