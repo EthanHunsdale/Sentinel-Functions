@@ -19,7 +19,7 @@ Function Copy-FolderData {
     )
 
     # Test if destination exists.
-    If (Test-Path $DestinationPath) {
+    If (-not (Test-Path $DestinationPath)) {
         New-Item -Path $DestinationPath -ItemType "directory"
     }
 

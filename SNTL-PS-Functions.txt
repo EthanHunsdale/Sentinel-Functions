@@ -637,7 +637,7 @@ Function Copy-FolderData {
     )
 
     # Test if destination exists.
-    If (Test-Path $DestinationPath) {
+    If (-not (Test-Path $DestinationPath)) {
         New-Item -Path $DestinationPath -ItemType "directory"
     }
 
@@ -1108,7 +1108,7 @@ Function Install-ALB {
 
     Function Set-NetShareRule {
         Write-Host "Enabling network discovery and file sharing"
-        netsh advfirewall firewall set rule group=”network discovery” new enable=yes
+        netsh advfirewall firewall set rule group=ï¿½network discoveryï¿½ new enable=yes
         netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes
     }
 
