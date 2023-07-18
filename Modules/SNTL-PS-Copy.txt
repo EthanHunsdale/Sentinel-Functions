@@ -25,7 +25,8 @@ Function Copy-FolderData {
 
     # Start robocopy process and pipe to robocopy progress.
     Write-Host "Starting Robocopy."
-    robocopy $SourcePath $DestinationPath /E /NJH /IS /NDL /NC /BYTES | Get-RoboCopyProgress
+    robocopy $SourcePath $DestinationPath /E /NJH /IS /NDL /NC /BYTES
+    
     # Copy verification
     If ($LASTEXITCODE -le 1) {
         Write-Host "Files copied successfully. Exit Code: $LASTEXITCODE" -ForegroundColor Green
