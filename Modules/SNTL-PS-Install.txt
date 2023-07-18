@@ -138,31 +138,39 @@ Function Install-SiteApps {
         If ($AppsList) {
             Write-Host "Installing $SiteCode Applications"
             ForEach ($App in $AppsList) {
-                If ($App.Install -eq "Y") {
-                    Write-Host "Installing {0}" -f $App.AppName
-                    If ($App.InstallType -eq "WinGet") {
-                        winget install -e --id $App.Path -h --accept-package-agreements --accept-source-agreements
+                $Application = $App.AppName
+                $AppPath = $App.Path
+                $Arguments = $App.Arguments
+                $InstallType = $App.InstallType
+                $Install = $App.Install
+                $AdminRights = $App.AdminRights
+
+                Write-Host "Installing $Application"
+                If ($Install -eq "Y") {
+                    If ($InstallType -eq "WinGet") {
+                        winget install -e --id $AppPath -h --accept-package-agreements --accept-source-agreements
                     }
-                    ElseIf ($App.InstallType -eq "File") {
-                        If ($App.Path.endsWith(".msi")) {
-                            If ($App.AdminRights -eq "Y") {
-                                Start-Process msiexec.exe -ArgumentList $App.Arguments -Wait -NoNewWindow -Verb RunAs
+                    ElseIf ($InstallType -eq "File") {
+                        If ($AppPath.endsWith(".msi")) {
+                            If ($AdminRights -eq "Y") {
+                                Start-Process msiexec.exe -ArgumentList $Arguments -Wait -NoNewWindow -Verb RunAs
                             }
                             Else {
-                                Start-Process msiexec.exe -ArgumentList $App.Arguments -Wait -NoNewWindow
+                                Start-Process msiexec.exe -ArgumentList $Arguments -Wait -NoNewWindow
                             }
                         }
-                        ElseIf ($App.Path.endsWith(".exe")) {
-                            If ($App.AdminRights -eq "Y") {
-                                Start-Process $App.Path -ArgumentList $App.Arguments -Wait -NoNewWindow -Verb RunAs
+                        ElseIf ($AppPath.endsWith(".exe")) {
+                            If ($AdminRights -eq "Y") {
+                                Start-Process $AppPath -ArgumentList $Arguments -Wait -NoNewWindow -Verb RunAs
                             }
                             Else {
-                                Start-Process $App.Path -ArgumentList $App.Arguments -Wait -NoNewWindow -Verb RunAs
+                                Start-Process $AppPath -ArgumentList $Arguments -Wait -NoNewWindow
                             }
                         }
                     }
+
+                    Write-Host "Skipping Install for $Application"
                 }
-                Write-Host "Skipping Install for $App.AppName"
             }
 
             Write-Host "App Installation Complete"
