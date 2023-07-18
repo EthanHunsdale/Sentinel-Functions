@@ -24,19 +24,13 @@ Function Copy-FolderData {
     }
 
     # Start robocopy process and pipe to robocopy progress.
-    Try {
-        Write-Host "Starting Robocopy."
-        robocopy $SourcePath $DestinationPath /E /NJH /IS /NDL /NC /BYTES | Get-RoboCopyProgress
-    }
-    Catch {
-        Write-Host "A problem occurred when copying items." -ForegroundColor Red
-    }
-
+    Write-Host "Starting Robocopy."
+    robocopy $SourcePath $DestinationPath /E /NJH /IS /NDL /NC /BYTES | Get-RoboCopyProgress
     # Copy verification
     If ($LASTEXITCODE -le 1) {
-        Write-Host "Files copied successfully." -ForegroundColor Green
+        Write-Host "Files copied successfully. Exit Code: $LASTEXITCODE" -ForegroundColor Green
     }
     Else {
-        Write-Host "Some or all files failed to copy." -ForegroundColor Red
+        Write-Host "Some or all files failed to copy. Exit Code: $LASTEXITCODE" -ForegroundColor Red
     }
 }
