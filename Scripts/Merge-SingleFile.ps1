@@ -2,17 +2,22 @@ Param (
     [Parameter(Mandatory = $True)]
     [String] $CSVPath,
 
-    [Parameter(Mandatory = $True)]
+    [Parameter(Mandatory = $False)]
     [String] $OutputPath,
 
-    [Parameter(Mandatory = $True)]
-    [String] $OutputName
+    [Parameter(Mandatory = $False)]
+    [String] $OutputName = "SNTL-PS-Functions"
 )
 
 Begin {
     Write-Host "Beginning File Merge"
     
     Write-Host "Creating Output File"
+    
+    If (-not $OutputPath) {
+        $OutputPath = Get-Location
+    }
+
     $Destination = "{0}\{1}.txt" -F $OutputPath, $OutputName
     New-Item -Path $Destination -ItemType File -Force
 
