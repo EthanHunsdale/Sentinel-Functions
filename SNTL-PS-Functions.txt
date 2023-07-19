@@ -399,20 +399,19 @@ Function Join-Domain {
         [String] $Password
     )
 
-    Begin {
-        Write-Host "Join Domain"
-        $Password = ConvertTo-SecureString $Password -AsPlainText -Force
-        $Username = $Domain + "\" + $Username
-        $credential = New-Object System.Management.Automation.PSCredential($Username, $Password)
+    Write-Host "Join Domain"
+    $Password = ConvertTo-SecureString $Password -AsPlainText -Force
+    $Username = $Domain + "\" + $Username
+    $credential = New-Object System.Management.Automation.PSCredential($Username, $Password)
         
-        Try {
-            Add-Computer -DomainName $Domain -Credential $credential
-            Write-Host "Successfully joined the $Domain domain." -ForegroundColor Green
-        }
-        Catch {
-            Write-Host "Unable to join the $Domain domain." -ForegroundColor Red
-        }
+    Try {
+        Add-Computer -DomainName $Domain -Credential $credential
+        Write-Host "Successfully joined the $Domain domain." -ForegroundColor Green
     }
+    Catch {
+        Write-Host "Unable to join the $Domain domain." -ForegroundColor Red
+    }
+    
 }
 
 Function Set-RunOnceScript {
