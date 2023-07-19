@@ -1,33 +1,33 @@
 Function Export-StaffMailboxPermissions {
     <#
-  .SYNOPSIS
-  Create report of all mailbox permissions
-  .DESCRIPTION
-  Get all mailbox permissions, including folder permissions for all or a selected group of users
-  .EXAMPLE
-  Generate the mailbox report with Shared mailboxes, store the csv file in the script root location.
-  Export-StaffMailboxPermissions -adminUPN john@contoso.com
-  .EXAMPLE
-  Get only the shared mailboxes
-  Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes only
-  .EXAMPLE
-  Get only the user mailboxes
-  Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes no
-  .EXAMPLE
-  Get the mailbox permissions without the folder (inbox and calendar) permissions
-  Export-StaffMailboxPermissions -adminUPN john@contoso.com -folderPermissions:$false
-  .EXAMPLE
-  Get the mailbox permissions for a selection of users
-  Export-StaffMailboxPermissions -adminUPN john@contoso.com -UserPrincipalName jane@contoso.com,alex@contoso.com
+    .SYNOPSIS
+    Create report of all mailbox permissions
+    .DESCRIPTION
+    Get all mailbox permissions, including folder permissions for all or a selected group of users
+    .EXAMPLE
+    Generate the mailbox report with Shared mailboxes, store the csv file in the script root location.
+    Export-StaffMailboxPermissions -adminUPN john@contoso.com
+    .EXAMPLE
+    Get only the shared mailboxes
+    Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes only
+    .EXAMPLE
+    Get only the user mailboxes
+    Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes no
+    .EXAMPLE
+    Get the mailbox permissions without the folder (inbox and calendar) permissions
+    Export-StaffMailboxPermissions -adminUPN john@contoso.com -folderPermissions:$false
+    .EXAMPLE
+    Get the mailbox permissions for a selection of users
+    Export-StaffMailboxPermissions -adminUPN john@contoso.com -UserPrincipalName jane@contoso.com,alex@contoso.com
 
-  .NOTES
-  Version:         1.0
-  Original Author: R. Mens - LazyAdmin.nl
-  Modified By:     E Hunsdale
-#>
+    .NOTES
+    Version:         1.0
+    Original Author: R. Mens - LazyAdmin.nl
+    Modified By:     E Hunsdale
+    #>
 
     [CmdletBinding()]
-    Param(
+    Param (
         [Parameter(
             Mandatory = $true,
             HelpMessage = "Enter the Exchange Online or Global admin username"
@@ -388,7 +388,6 @@ Function Export-StaffMailboxPermissions {
     }
 }
 
-
 Function Get-SNTLPS {
     <#
     .SYNOPSIS
@@ -739,7 +738,7 @@ Function Install-Office365 {
 
         # Installation Variables 
         $O365Setup = "C:\IT\Software\O365\setup.exe"
-        $O365Xml = "C:\IT\Software\O365\{1}_O365_Config.xml" -f $SiteCode
+        $O365Xml = "C:\IT\Software\O365\{0}_O365_Config.xml" -f $SiteCode
         $Installed = $False
 
         # Shortcut Variables 
@@ -956,7 +955,7 @@ Function Install-ALB {
 
     Function Set-NetShareRule {
         Write-Host "Enabling network discovery and file sharing"
-        netsh advfirewall firewall set rule group=”network discovery” new enable=yes
+        netsh advfirewall firewall set rule group=ï¿½network discoveryï¿½ new enable=yes
         netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes
     }
 
