@@ -401,12 +401,10 @@ Function Join-Domain {
 
     Begin {
         Write-Host "Join Domain"
-        $Password = $Password | ConvertTo-SecureString -AsPlainText -Force
+        $Password = ConvertTo-SecureString $Password -AsPlainText -Force
         $Username = $Domain + "\" + $Username
         $credential = New-Object System.Management.Automation.PSCredential($Username, $Password)
-    }
-
-    Process {
+        
         Try {
             Add-Computer -DomainName $Domain -Credential $credential
             Write-Host "Successfully joined the $Domain domain." -ForegroundColor Green
