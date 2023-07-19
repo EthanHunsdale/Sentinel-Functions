@@ -40,7 +40,7 @@ Function Install-Office365 {
 
         # Installation Variables 
         $O365Setup = "C:\IT\Software\O365\setup.exe"
-        $O365Xml = "C:\IT\Software\O365\{1}_O365_Config.xml" -f $SiteCode
+        $O365Xml = "C:\IT\Software\O365\{0}_O365_Config.xml" -f $SiteCode
         $Installed = $False
 
         # Shortcut Variables 
