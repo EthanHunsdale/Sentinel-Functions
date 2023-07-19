@@ -39,7 +39,6 @@ Function Install-Office365 {
         Write-Host "Starting Office 365 Installation"
 
         # Installation Variables 
-        $O365Setup = "C:\IT\Software\O365\setup.exe"
         $O365Xml = "C:\IT\Software\O365\{0}_O365_Config.xml" -f $SiteCode
         $Installed = $False
 
@@ -54,7 +53,7 @@ Function Install-Office365 {
 
         Try {
             # Install Office 365
-            Start-Process $O365Setup -ArgumentList "/configure $O365Xml" | Wait-Process
+            & C:\IT\Software\O365\setup.exe /configure $O365ConfigDest | Wait-Process
             
             $Installed = $True
             Write-Host "Office 365 Installed" -ForegroundColor Green
