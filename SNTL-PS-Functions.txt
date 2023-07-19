@@ -1372,7 +1372,6 @@ Function Update-DellPackages {
             Write-Host "'Dell Command Update' is current."
         }
 
-        Dell.CommandUpdate.Universal
         #Configure and run Dell Command Update
         Stop-Process -Name DellCommandUpdate -Force -ErrorAction SilentlyContinue
 
