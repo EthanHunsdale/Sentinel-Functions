@@ -1,29 +1,30 @@
 Function Export-StaffMailboxPermissions {
     <#
     .SYNOPSIS
-    Create report of all mailbox permissions
+        Create report of all mailbox permissions
     .DESCRIPTION
-    Get all mailbox permissions, including folder permissions for all or a selected group of users
+        Get all mailbox permissions, including folder permissions for all or a selected group of users
     .EXAMPLE
-    Generate the mailbox report with Shared mailboxes, store the csv file in the script root location.
-    Export-StaffMailboxPermissions -adminUPN john@contoso.com
+        Generate the mailbox report with Shared mailboxes, store the csv file in the script root location.
+        Export-StaffMailboxPermissions -adminUPN john@contoso.com
     .EXAMPLE
-    Get only the shared mailboxes
-    Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes only
+        Get only the shared mailboxes
+        Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes only
     .EXAMPLE
-    Get only the user mailboxes
-    Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes no
+        Get only the user mailboxes
+        Export-StaffMailboxPermissions -adminUPN john@contoso.com -sharedMailboxes no
     .EXAMPLE
-    Get the mailbox permissions without the folder (inbox and calendar) permissions
-    Export-StaffMailboxPermissions -adminUPN john@contoso.com -folderPermissions:$false
+        Get the mailbox permissions without the folder (inbox and calendar) permissions
+        Export-StaffMailboxPermissions -adminUPN john@contoso.com -folderPermissions:$false
     .EXAMPLE
-    Get the mailbox permissions for a selection of users
-    Export-StaffMailboxPermissions -adminUPN john@contoso.com -UserPrincipalName jane@contoso.com,alex@contoso.com
+        Get the mailbox permissions for a selection of users
+        Export-StaffMailboxPermissions -adminUPN john@contoso.com -UserPrincipalName jane@contoso.com,alex@contoso.com
 
     .NOTES
     Version:         1.0
     Original Author: R. Mens - LazyAdmin.nl
     Modified By:     E Hunsdale
+
     #>
 
     [CmdletBinding()]
@@ -56,9 +57,9 @@ Function Export-StaffMailboxPermissions {
 
     Function Connect-ToEXO {
         <#
-      .SYNOPSIS
-          Connects to EXO when no connection exists. Checks for EXO v2 module
-    #>
+        .SYNOPSIS
+            Connects to EXO when no connection exists. Checks for EXO v2 module
+        #>
     
         process {
             # Check if EXO is installed and connect if no connection exists
@@ -90,9 +91,9 @@ Function Export-StaffMailboxPermissions {
 
     Function Get-DisplayName {
         <#
-      .SYNOPSIS
-        Get the full displayname (if requested) or return only the userprincipalname
-    #>
+        .SYNOPSIS
+            Get the full displayname (if requested) or return only the userprincipalname
+        #>
         Param(
             [Parameter(
                 Mandatory = $true
@@ -110,9 +111,9 @@ Function Export-StaffMailboxPermissions {
 
     Function Get-SingleUser {
         <#
-      .SYNOPSIS
+        .SYNOPSIS
         Get only the requested mailbox
-    #>
+        #>
         Param(
             [Parameter(
                 Mandatory = $true
@@ -126,9 +127,9 @@ Function Export-StaffMailboxPermissions {
 
     Function Get-AllMailboxes {
         <#
-      .SYNOPSIS
-          Get all the mailboxes for the report
-    #>
+        .SYNOPSIS
+            Get all the mailboxes for the report
+        #>
         Process {
             Switch ($sharedMailboxes) {
                 "include" { $mailboxTypes = "UserMailbox,SharedMailbox" }
@@ -143,9 +144,9 @@ Function Export-StaffMailboxPermissions {
 
     Function Get-SendOnBehalf {
         <#
-      .SYNOPSIS
-          Get Display name for each Send on Behalf entity
-    #>
+        .SYNOPSIS
+            Get Display name for each Send on Behalf entity
+        #>
         Param(
             [Parameter(
                 Mandatory = $true
@@ -167,9 +168,9 @@ Function Export-StaffMailboxPermissions {
 
     Function Get-SendAsPermissions {
         <#
-      .SYNOPSIS
-          Get all users with Send as Permissions
-    #>
+        .SYNOPSIS
+            Get all users with Send as Permissions
+        #>
         Param(
             [Parameter(
                 Mandatory = $true
@@ -190,9 +191,9 @@ Function Export-StaffMailboxPermissions {
 
     Function Get-FullAccessPermissions {
         <#
-      .SYNOPSIS
-          Get all users with Read and manage (full access) permissions
-    #>
+        .SYNOPSIS
+            Get all users with Read and manage (full access) permissions
+        #>
         Param(
             [Parameter(
                 Mandatory = $true
@@ -213,10 +214,11 @@ Function Export-StaffMailboxPermissions {
 
     Function Get-FolderPermissions {
         <#
-      .SYNOPSIS
-        Get Inbox folder permisions
-    #>
-        Param(
+        .SYNOPSIS
+            Get Inbox folder permisions
+        #>
+
+        Param (
             [Parameter(Mandatory = $true)] $identity,
             [Parameter(Mandatory = $true)] $folder
         )
