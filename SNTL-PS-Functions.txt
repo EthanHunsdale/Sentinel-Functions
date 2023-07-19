@@ -20,7 +20,7 @@ Function Get-USBPath {
     )
 
     $DriveLetter = (Get-WmiObject Win32_Volume | Where-Object Label -Like $DriveName).DriveLetter
-    $FolderPath = "{0}\{1}" -F $DriveLetter, $FolderName
+    $FolderPath = "{0}\{1}" -f $DriveLetter, $FolderName
 
     If (Test-Path $FolderPath) {
         Return $FolderPath
