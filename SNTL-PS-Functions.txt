@@ -215,7 +215,6 @@ Function Install-Office365 {
 
         # Installation Variables
         $O365ConfigDest = "C:\IT\Software\O365\" + $SiteCode + "_O365_Config.xml"
-        $Installed = $False
 
         # Shortcut Variables 
         $O365Root64 = "C:\Program Files\Microsoft Office\root\Office16\"
@@ -225,7 +224,7 @@ Function Install-Office365 {
         Write-Host "Installing Office 365"
         & C:\IT\Software\O365\setup.exe /configure $O365ConfigDest | Wait-Process
 
-        If ($Installed) {
+        If ((Test-Path $O365Root64) -or (Test-Path $O365Root32)) {
             Write-Host "Placing Shortcuts"
 
             ForEach ($App in $O365Apps.Keys) {
