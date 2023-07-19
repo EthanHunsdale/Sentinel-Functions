@@ -46,69 +46,78 @@ Function Add-WifiNetwork {
     .EXAMPLE
         Add-WifiNetwork -NetworkSSID "WiFi Name" -NetworkPassword "Pass12345"
     #>
-
-    Param
+    param
     (
-        [Parameter(Mandatory = $True)]
+        [Parameter(Mandatory = $False)]
         [string]$NetworkSSID,
-
-        [Parameter(Mandatory = $True)]
+    
+        [Parameter(Mandatory = $true)]
         [string]$NetworkPassword,
-
+    
         [ValidateSet('WEP', 'WPA', 'WPA2', 'WPA2PSK')]
         [Parameter(Mandatory = $False)]
         [string]$Authentication = 'WPA2PSK',
-
+    
         [ValidateSet('AES', 'TKIP')]
         [Parameter(Mandatory = $False)]
         [string]$Encryption = 'AES'
     )
-
+    
     # Create the WiFi profile, set the profile to auto connect
     $WirelessProfile = @'
-<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-	<name>{0}</name>
-	<SSIDConfig>
-		<SSID>
-			<name>{0}</name>
-		</SSID>
-	</SSIDConfig>
-	<connectionType>ESS</connectionType>
-	<connectionMode>auto</connectionMode>
-	<MSM>
-		<security>
-			<authEncryption>
-				<authentication>{2}</authentication>
-				<encryption>{3}</encryption>
-				<useOneX>false</useOneX>
-			</authEncryption>
-			<sharedKey>
-				<keyType>passPhrase</keyType>
-				<protected>false</protected>
-				<keyMaterial>{1}</keyMaterial>
-			</sharedKey>
-		</security>
-	</MSM>
-</WLANProfile>
+    <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+        <name>{0}</name>
+        <SSIDConfig>
+            <SSID>
+                <name>{0}</name>
+            </SSID>
+        </SSIDConfig>
+        <connectionType>ESS</connectionType>
+        <connectionMode>auto</connectionMode>
+        <MSM>
+            <security>
+                <authEncryption>
+                    <authentication>{2}</authentication>
+                    <encryption>{3}</encryption>
+                    <useOneX>false</useOneX>
+                </authEncryption>
+                <sharedKey>
+                    <keyType>passPhrase</keyType>
+                    <protected>false</protected>
+                    <keyMaterial>{1}</keyMaterial>
+                </sharedKey>
+            </security>
+        </MSM>
+    </WLANProfile>
 '@ -f $NetworkSSID, $NetworkPassword, $Authentication, $Encryption
-
+    
     # Create the XML file locally
-    $tempProfileXML = "$env:TEMP\TempWLANProfile.xml"
-    $WirelessProfile | Out-File $tempProfileXML -Force
-
-    # Add the WiFi profile
-    Try {
-        Start-Process netsh ('wlan add profile filename={0}' -f $tempProfileXML)
-        
+    $random = Get-Random -Minimum 1111 -Maximum 99999999
+    $tempProfileXML = "$env:TEMP\tempProfile$random.xml"
+    $WirelessProfile | Out-File $tempProfileXML
+    
+    # Add the WiFi profile and connect
+    Start-Process netsh ('wlan add profile filename={0}' -f $tempProfileXML)
+    
+    # Connect to the WiFi network - only if you need to
+    $WifiNetworks = (netsh wlan show network)
+    $NetworkSSIDSearch = '*' + $NetworkSSID + '*'
+    If ($WifiNetworks -like $NetworkSSIDSearch) {
+        Try {
+            Write-Host "Found SSID: $NetworkSSID `nAttempting to connect"
+            Start-Process netsh ('wlan connect name="{0}"' -f $NetworkSSID)
+            Start-Sleep 5
+            netsh interface show interface
+        }
+        Catch {
+            Remove-Item -Force $tempProfileXML
+        }
     }
-    Catch {
-        Write-Host 'Could not add wireless profile with SSID: {0}' -f $NetworkSSID
+    Else {
+        Write-Host "Did not find SSID: $NetworkSSID `nConnection profile stored for later use."
     }
-
-    # Remove temp profile
     Remove-Item -Force $tempProfileXML
 }
-
 
 Function Copy-FolderData {
     <#
@@ -157,7 +166,7 @@ Function Disable-FastStartup {
         Disable-FastStartup
     #>
 
-	Write-Host 'Disable Windows Fast Startup' -ForegroundColor Cyan
+    Write-Host 'Disable Windows Fast Startup' -ForegroundColor Cyan
     
     Try {
         REG ADD "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d "0" /f
@@ -211,53 +220,53 @@ Function Install-Office365 {
         [Parameter(Mandatory = $True)]
         [String] $SiteCode
     )
-        Write-Host "Starting Office 365 Installation"
+    Write-Host "Starting Office 365 Installation"
 
-        # Installation Variables
-        $O365ConfigDest = "C:\IT\Software\O365\" + $SiteCode + "_O365_Config.xml"
+    # Installation Variables
+    $O365ConfigDest = "C:\IT\Software\O365\" + $SiteCode + "_O365_Config.xml"
 
-        # Shortcut Variables 
-        $O365Root64 = "C:\Program Files\Microsoft Office\root\Office16\"
-        $O365Root32 = "C:\Program Files (x86)\Microsoft Office\root\Office16\"
-        $O365Apps = @{ Word = "WINWORD"; Outlook = "OUTLOOK"; Excel = "EXCEL" }
+    # Shortcut Variables 
+    $O365Root64 = "C:\Program Files\Microsoft Office\root\Office16\"
+    $O365Root32 = "C:\Program Files (x86)\Microsoft Office\root\Office16\"
+    $O365Apps = @{ Word = "WINWORD"; Outlook = "OUTLOOK"; Excel = "EXCEL" }
 
-        Write-Host "Installing Office 365"
-        & C:\IT\Software\O365\setup.exe /configure $O365ConfigDest | Wait-Process
+    Write-Host "Installing Office 365"
+    & C:\IT\Software\O365\setup.exe /configure $O365ConfigDest | Wait-Process
 
-        If ((Test-Path $O365Root64) -or (Test-Path $O365Root32)) {
-            Write-Host "Placing Shortcuts"
+    If ((Test-Path $O365Root64) -or (Test-Path $O365Root32)) {
+        Write-Host "Placing Shortcuts"
 
-            ForEach ($App in $O365Apps.Keys) {
-                # Set Path variables for O365 root
-                $Path64 = "{0}{1}.exe" -f $O365Root64, $($O365Apps[$App])
-                $Path32 = "{0}{1}.exe" -f $O365Root32, $($O365Apps[$App])
+        ForEach ($App in $O365Apps.Keys) {
+            # Set Path variables for O365 root
+            $Path64 = "{0}{1}.exe" -f $O365Root64, $($O365Apps[$App])
+            $Path32 = "{0}{1}.exe" -f $O365Root32, $($O365Apps[$App])
 
-                Try {
-                    # Confirm Office 365 version
-                    If (Test-Path $Path64) {
-                        $TargetFile = $Path64
-                    }
-                    ElseIf (Test-Path $Path32) {
-                        $TargetFile = $Path32
-                    }
-
-                    # Create the shortcut on public desktop
-                    $ShortcutFile = "$env:Public\Desktop\{0}.lnk" -f $App
-                    $WScriptShell = New-Object -ComObject WScript.Shell
-                    $Shortcut = $WScriptShell.CreateShortcut($ShortcutFile)
-                    $Shortcut.TargetPath = $TargetFile
-                    $Shortcut.Save()
-
-                    Write-Host "Added $App shortcut" -ForegroundColor Green
+            Try {
+                # Confirm Office 365 version
+                If (Test-Path $Path64) {
+                    $TargetFile = $Path64
                 }
-                Catch {
-                    Write-Host "Could not place shortcuts" -ForegroundColor Red
+                ElseIf (Test-Path $Path32) {
+                    $TargetFile = $Path32
                 }
+
+                # Create the shortcut on public desktop
+                $ShortcutFile = "$env:Public\Desktop\{0}.lnk" -f $App
+                $WScriptShell = New-Object -ComObject WScript.Shell
+                $Shortcut = $WScriptShell.CreateShortcut($ShortcutFile)
+                $Shortcut.TargetPath = $TargetFile
+                $Shortcut.Save()
+
+                Write-Host "Added $App shortcut" -ForegroundColor Green
+            }
+            Catch {
+                Write-Host "Could not place shortcuts" -ForegroundColor Red
             }
         }
-        Else {
-            Write-Host "Could not place shortcuts" -ForegroundColor Red
-        }
+    }
+    Else {
+        Write-Host "Could not place shortcuts" -ForegroundColor Red
+    }
 }
 
 Function Install-SiteApps {
