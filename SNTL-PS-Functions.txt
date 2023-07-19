@@ -752,7 +752,7 @@ Function Install-Office365 {
 
         Try {
             # Install Office 365
-            Start-Process $O365Setup -ArgumentList "/configure $O365Xml" | Wait-Process
+            Start-Process $O365Setup -ArgumentList "/configure $O365Xml" -Wait -NoNewWindow
             
             $Installed = $True
             Write-Host "Office 365 Installed" -ForegroundColor Green
