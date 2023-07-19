@@ -27,7 +27,7 @@ Function Install-Office365 {
     .PARAMETER DataFolder
         The root folder that has the O365 folder with setup.exe and config files.
     .EXAMPLE
-        Install-Office365 -SiteCode "ABC" -DataFolder "C:\Data"
+        Install-Office365 -SiteCode "ABC"
     #>
 
     Param (
@@ -275,4 +275,34 @@ Function Install-ALB {
     Set-FolderPermissions
 
     Start-Process "C:\Program Files (x86)\Advanced Legal\ALB\PMS\IRIS.Law.PmsExe.exe" -Verb RunAs
+}
+
+Function Install-WinGet {
+    <#
+    .SYNOPSIS
+        Installs Microsofts WinGet
+    .EXAMPLE
+        Install-WinGet
+    #>
+
+    $progressPreference = 'silentlyContinue'
+
+    If (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "WinGet is already installed."
+    }
+    Else {
+        Try {
+            $latestWingetMsixBundleUri = $(Invoke-RestMethod https://api.github.com/repos/microsoft/winget-cli/releases/latest).assets.browser_download_url | Where-Object { $_.EndsWith(".msixbundle") }
+            $latestWingetMsixBundle = $latestWingetMsixBundleUri.Split("/")[-1]
+    
+            Write-Information "Downloading winget to artifacts directory..."
+            Invoke-WebRequest -Uri $latestWingetMsixBundleUri -OutFile "./$latestWingetMsixBundle"
+            Invoke-WebRequest -Uri https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx -OutFile Microsoft.VCLibs.x64.14.00.Desktop.appx
+            Add-AppxPackage Microsoft.VCLibs.x64.14.00.Desktop.appx
+            Add-AppxPackage $latestWingetMsixBundle
+        }
+        Catch {
+            Write-Host "Could not install WinGet"
+        }
+    }
 }
